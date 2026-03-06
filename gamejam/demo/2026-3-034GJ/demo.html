@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>034 Jam: Resonance & Connection</title>
+    <title>SYNC: Find the same action</title>
     <style>
         body {
             margin: 0;
@@ -13,29 +13,39 @@
             height: 100vh;
             overflow: hidden;
             color: #fff;
-            font-family: sans-serif;
+            font-family: 'Courier New', Courier, monospace;
         }
 
         canvas {
             border: 1px solid #222;
             background: #000;
             cursor: pointer;
-            box-shadow: 0 0 40px rgba(0, 0, 0, 1);
+        }
+
+        .instruction {
+            position: absolute;
+            top: 20px;
+            letter-spacing: 3px;
+            color: #555;
+            pointer-events: none;
         }
     </style>
 </head>
 
 <body>
+    <div id="hint" class="instruction">REC: 8 MOVEMENTS</div>
     <canvas id="gameCanvas" width="960" height="540"></canvas>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const hintLabel = document.getElementById('hint');
 
         const BEAT_DURATION = 28;
         const SEQUENCE_LENGTH = 8;
         const PALETTE = ['#FF355E', '#FF9933', '#FFFF66', '#66FF66', '#50BFE6', '#497EFE', '#B041FF', '#FF6EFF'];
 
+        // 模拟玩家录制的动作频率
         const myPattern = [1, 0, 1, 1, 0, 1, 0, 0];
         let frameCount = 0;
         let currentStep = 0;
@@ -55,18 +65,16 @@
         function createEntity(isTarget) {
             const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
             return {
-                originX: 350 + Math.random() * 550,
+                originX: 400 + Math.random() * 500,
                 originY: 80 + Math.random() * 380,
                 x: 0, y: 0,
                 size: 25 + Math.random() * 15,
                 type: ['circle', 'rect', 'triangle'][Math.floor(Math.random() * 3)],
-                baseColor: color,
-                currentColor: color,
+                baseColor: color, currentColor: color,
                 scale: 1,
                 pattern: isTarget ? [...myPattern] : Array.from({ length: 8 }, () => Math.random() > 0.5 ? 1 : 0),
                 isTarget: isTarget,
-                connected: false,
-                isError: false,
+                connected: false, isError: false,
                 angle: Math.random() * Math.PI * 2,
                 driftSpeed: 0.008 + Math.random() * 0.01,
                 driftRadius: 30 + Math.random() * 20
@@ -80,10 +88,8 @@
             ctx.scale(e.scale, e.scale);
 
             ctx.beginPath();
-            // 连线后变蓝，错误变灰，平时是原色
             let drawColor = e.currentColor;
             if (isPlayer || e.connected) drawColor = player.outlineColor;
-
             ctx.strokeStyle = drawColor;
             ctx.lineWidth = (e.connected || isPlayer) ? 4 : 2;
 
@@ -113,45 +119,37 @@
                 globalAlpha = Math.max(0, globalAlpha - 0.02);
                 const midX = canvas.width / 2;
                 const midY = canvas.height / 2;
-                player.x += (midX - 50 - player.x) * 0.03;
+                player.x += (midX - 60 - player.x) * 0.03;
                 player.y += (midY - player.y) * 0.03;
-                targetEntity.x += (midX + 50 - targetEntity.x) * 0.03;
+                targetEntity.x += (midX + 60 - targetEntity.x) * 0.03;
                 targetEntity.y += (midY - targetEntity.y) * 0.03;
                 targetEntity.driftRadius *= 0.9;
+                hintLabel.innerText = "CONNECTED";
+                hintLabel.style.color = player.outlineColor;
             } else {
                 entities.forEach(e => {
                     e.angle += e.driftSpeed;
                     e.x = e.originX + Math.cos(e.angle) * e.driftRadius;
                     e.y = e.originY + Math.sin(e.angle * 0.8) * e.driftRadius;
                 });
+                // 模拟已经录制完动作，提示寻找
+                hintLabel.innerText = "FIND THE SAME MOVEMENT";
             }
 
-            // 缩放节奏
             let pScale = myPattern[currentStep] ? 1.4 : 1.0;
             player.scale += (pScale - player.scale) * 0.3;
             entities.forEach(e => {
                 let eScale = e.pattern[currentStep] ? 1.4 : 1.0;
-                // 选错时稍微缩小一点增强“挫败感”
                 if (e.isError) eScale *= 0.8;
                 e.scale += (eScale - e.scale) * 0.3;
             });
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 背景网格装饰
-            ctx.strokeStyle = '#111';
-            for (let i = 0; i < canvas.width; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
-
             entities.filter(e => !e.connected).forEach(e => drawEntity(e, false, globalAlpha));
 
             if (isMatched) {
-                ctx.beginPath();
-                ctx.strokeStyle = player.outlineColor;
-                ctx.globalAlpha = 0.4;
-                ctx.setLineDash([10, 5]);
-                ctx.moveTo(player.x, player.y);
-                ctx.lineTo(targetEntity.x, targetEntity.y);
-                ctx.stroke();
+                ctx.beginPath(); ctx.strokeStyle = player.outlineColor; ctx.globalAlpha = 0.4;
+                ctx.setLineDash([10, 5]); ctx.moveTo(player.x, player.y); ctx.lineTo(targetEntity.x, targetEntity.y); ctx.stroke();
             }
 
             drawEntity(player, true, 1.0);
@@ -173,13 +171,9 @@
                         e.connected = true;
                         isMatched = true;
                     } else {
-                        // 错误变灰逻辑
                         e.isError = true;
                         e.currentColor = '#444';
-                        setTimeout(() => {
-                            e.isError = false;
-                            e.currentColor = e.baseColor;
-                        }, 600);
+                        setTimeout(() => { e.isError = false; e.currentColor = e.baseColor; }, 600);
                     }
                 }
             });
@@ -190,4 +184,4 @@
     </script>
 </body>
 
-</html>
+</html>s
