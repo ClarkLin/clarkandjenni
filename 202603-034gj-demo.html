@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>034 Jam: Resonance & Connection</title>
+    <style>
+        body {
+            margin: 0;
+            background: #050505;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            color: #fff;
+            font-family: sans-serif;
+        }
+
+        canvas {
+            border: 1px solid #222;
+            background: #000;
+            cursor: pointer;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 1);
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const BEAT_DURATION = 28;
+        const SEQUENCE_LENGTH = 8;
+        const PALETTE = ['#FF355E', '#FF9933', '#FFFF66', '#66FF66', '#50BFE6', '#497EFE', '#B041FF', '#FF6EFF'];
+
+        const myPattern = [1, 0, 1, 1, 0, 1, 0, 0];
+        let frameCount = 0;
+        let currentStep = 0;
+        let isMatched = false;
+        let globalAlpha = 1.0;
+
+        const player = { x: 150, y: 270, size: 48, scale: 1, color: '#FFFFFF', outlineColor: '#3498db' };
+        const entities = [];
+        let targetEntity = null;
+
+        function init() {
+            targetEntity = createEntity(true);
+            entities.push(targetEntity);
+            for (let i = 0; i < 30; i++) entities.push(createEntity(false));
+        }
+
+        function createEntity(isTarget) {
+            const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+            return {
+                originX: 350 + Math.random() * 550,
+                originY: 80 + Math.random() * 380,
+                x: 0, y: 0,
+                size: 25 + Math.random() * 15,
+                type: ['circle', 'rect', 'triangle'][Math.floor(Math.random() * 3)],
+                baseColor: color,
+                currentColor: color,
+                scale: 1,
+                pattern: isTarget ? [...myPattern] : Array.from({ length: 8 }, () => Math.random() > 0.5 ? 1 : 0),
+                isTarget: isTarget,
+                connected: false,
+                isError: false,
+                angle: Math.random() * Math.PI * 2,
+                driftSpeed: 0.008 + Math.random() * 0.01,
+                driftRadius: 30 + Math.random() * 20
+            };
+        }
+
+        function drawEntity(e, isPlayer = false, alpha = 1.0) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(e.x, e.y);
+            ctx.scale(e.scale, e.scale);
+
+            ctx.beginPath();
+            // 连线后变蓝，错误变灰，平时是原色
+            let drawColor = e.currentColor;
+            if (isPlayer || e.connected) drawColor = player.outlineColor;
+
+            ctx.strokeStyle = drawColor;
+            ctx.lineWidth = (e.connected || isPlayer) ? 4 : 2;
+
+            if (isPlayer || e.type === 'rect') ctx.strokeRect(-e.size / 2, -e.size / 2, e.size, e.size);
+            else if (e.type === 'circle') { ctx.arc(0, 0, e.size / 2, 0, Math.PI * 2); ctx.stroke(); }
+            else {
+                ctx.moveTo(0, -e.size / 2); ctx.lineTo(e.size / 2, e.size / 2); ctx.lineTo(-e.size / 2, e.size / 2);
+                ctx.closePath(); ctx.stroke();
+            }
+
+            if (isPlayer || e.connected) {
+                ctx.globalAlpha = alpha * 0.2;
+                ctx.fillStyle = player.outlineColor;
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        function update() {
+            frameCount++;
+            if (frameCount >= BEAT_DURATION) {
+                currentStep = (currentStep + 1) % SEQUENCE_LENGTH;
+                frameCount = 0;
+            }
+
+            if (isMatched) {
+                globalAlpha = Math.max(0, globalAlpha - 0.02);
+                const midX = canvas.width / 2;
+                const midY = canvas.height / 2;
+                player.x += (midX - 50 - player.x) * 0.03;
+                player.y += (midY - player.y) * 0.03;
+                targetEntity.x += (midX + 50 - targetEntity.x) * 0.03;
+                targetEntity.y += (midY - targetEntity.y) * 0.03;
+                targetEntity.driftRadius *= 0.9;
+            } else {
+                entities.forEach(e => {
+                    e.angle += e.driftSpeed;
+                    e.x = e.originX + Math.cos(e.angle) * e.driftRadius;
+                    e.y = e.originY + Math.sin(e.angle * 0.8) * e.driftRadius;
+                });
+            }
+
+            // 缩放节奏
+            let pScale = myPattern[currentStep] ? 1.4 : 1.0;
+            player.scale += (pScale - player.scale) * 0.3;
+            entities.forEach(e => {
+                let eScale = e.pattern[currentStep] ? 1.4 : 1.0;
+                // 选错时稍微缩小一点增强“挫败感”
+                if (e.isError) eScale *= 0.8;
+                e.scale += (eScale - e.scale) * 0.3;
+            });
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 背景网格装饰
+            ctx.strokeStyle = '#111';
+            for (let i = 0; i < canvas.width; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+
+            entities.filter(e => !e.connected).forEach(e => drawEntity(e, false, globalAlpha));
+
+            if (isMatched) {
+                ctx.beginPath();
+                ctx.strokeStyle = player.outlineColor;
+                ctx.globalAlpha = 0.4;
+                ctx.setLineDash([10, 5]);
+                ctx.moveTo(player.x, player.y);
+                ctx.lineTo(targetEntity.x, targetEntity.y);
+                ctx.stroke();
+            }
+
+            drawEntity(player, true, 1.0);
+            if (targetEntity.connected) drawEntity(targetEntity, false, 1.0);
+
+            requestAnimationFrame(update);
+        }
+
+        canvas.onclick = (event) => {
+            if (isMatched) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = event.clientX - rect.left;
+            const my = event.clientY - rect.top;
+
+            entities.forEach(e => {
+                const d = Math.sqrt((mx - e.x) ** 2 + (my - e.y) ** 2);
+                if (d < 40) {
+                    if (e.isTarget) {
+                        e.connected = true;
+                        isMatched = true;
+                    } else {
+                        // 错误变灰逻辑
+                        e.isError = true;
+                        e.currentColor = '#444';
+                        setTimeout(() => {
+                            e.isError = false;
+                            e.currentColor = e.baseColor;
+                        }, 600);
+                    }
+                }
+            });
+        };
+
+        init();
+        update();
+    </script>
+</body>
+
+</html>
