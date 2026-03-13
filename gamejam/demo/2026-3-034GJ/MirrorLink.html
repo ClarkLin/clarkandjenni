@@ -2,10 +2,22 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Mirror Link</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#111520;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;font-family:monospace}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;touch-action:none}
+body{background:#111520;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:monospace}
+
+/* ── Scale wrapper: shrinks to fit any screen ── */
+#scale-root{
+  transform-origin:top center;
+  display:flex;flex-direction:column;align-items:center;
+  gap:0;
+}
+
 #ui-top{width:800px;padding:8px 12px;display:flex;align-items:center;gap:10px}
 #level-dots{display:flex;gap:4px;flex-wrap:wrap;max-width:180px}
 .level-dot{width:7px;height:7px;border-radius:50%;background:#222740;transition:background .3s}
@@ -13,12 +25,50 @@ body{background:#111520;display:flex;flex-direction:column;align-items:center;ju
 .level-dot.current{background:#fff}
 #bar-wrap{flex:1;position:relative;height:14px}
 #bar-container{width:100%;height:100%;background:#1c2035;border-radius:3px;overflow:hidden;border:1px solid #2e3455}
-#bar-fill{height:100%;width:100%;background:#00cc44;transition:background .12s;transform-origin:left}
-#bar-shake{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#bar-fill{height:100%;width:100%;background:#00cc44;transition:background .12s}
 #level-label{font-size:11px;color:#445;letter-spacing:2px;min-width:64px;text-align:right}
 #game-wrap{position:relative;width:800px;height:500px}
 canvas{display:block;border-radius:4px;box-shadow:0 0 40px rgba(0,0,0,.7)}
-#overlay{position:absolute;top:0;left:0;width:800px;height:500px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,10,18,.9);gap:20px;border-radius:4px;backdrop-filter:blur(2px)}
+
+/* ── Virtual joystick ── */
+#joystick-wrap{
+  width:800px;height:130px;
+  display:flex;align-items:center;justify-content:center;
+  gap:40px;
+  padding:8px 0;
+}
+.joystick-zone{
+  position:relative;
+  width:110px;height:110px;
+  border-radius:50%;
+  background:rgba(255,255,255,.04);
+  border:1.5px solid rgba(255,255,255,.1);
+  flex-shrink:0;
+}
+.joystick-knob{
+  position:absolute;
+  width:46px;height:46px;
+  border-radius:50%;
+  background:rgba(255,255,255,.18);
+  border:2px solid rgba(255,255,255,.35);
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  transition:background .1s;
+}
+.joystick-zone.active .joystick-knob{
+  background:rgba(255,255,255,.30);
+}
+.joystick-label{
+  font-size:9px;color:#334;letter-spacing:2px;
+  text-align:center;margin-top:4px;
+}
+#joystick-hint{
+  font-size:10px;color:#334;letter-spacing:1px;
+  text-align:center;line-height:1.8;
+}
+
+#overlay{position:absolute;top:0;left:0;width:800px;height:500px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,10,18,.92);gap:18px;border-radius:4px;backdrop-filter:blur(2px)}
 #overlay.hidden{display:none}
 .overlay-title{font-size:32px;font-weight:bold;letter-spacing:6px;color:#fff;text-shadow:0 0 30px rgba(0,200,100,.4)}
 .overlay-sub{font-size:13px;color:#556;letter-spacing:3px}
@@ -27,12 +77,15 @@ canvas{display:block;border-radius:4px;box-shadow:0 0 40px rgba(0,0,0,.7)}
 .hint-dot{width:10px;height:10px;border-radius:50%}
 .hint-sq{width:10px;height:10px}
 .hint-tri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #ff6633}
-.overlay-keys{font-size:10px;color:#334;letter-spacing:1px;margin-top:4px}
-.btn{padding:10px 32px;background:transparent;border:1px solid #334;color:#89a;font-family:monospace;font-size:12px;letter-spacing:3px;cursor:pointer;border-radius:2px;transition:all .2s}
+.overlay-keys{font-size:10px;color:#334;letter-spacing:1px}
+.btn{padding:10px 32px;background:transparent;border:1px solid #334;color:#89a;font-family:monospace;font-size:12px;letter-spacing:3px;cursor:pointer;border-radius:2px;transition:all .2s;touch-action:manipulation}
 .btn:hover{border-color:#00cc44;color:#00cc44;box-shadow:0 0 12px rgba(0,200,80,.2)}
+#mute-btn{position:absolute;top:8px;right:12px;background:transparent;border:1px solid #334;color:#556;font-family:monospace;font-size:10px;letter-spacing:1px;padding:3px 8px;cursor:pointer;border-radius:2px;transition:all .2s;touch-action:manipulation}
+#mute-btn:hover{border-color:#667;color:#aaa}
 </style>
 </head>
 <body>
+<div id="scale-root">
 <div id="ui-top">
   <div id="level-dots"></div>
   <div id="bar-wrap">
@@ -42,6 +95,7 @@ canvas{display:block;border-radius:4px;box-shadow:0 0 40px rgba(0,0,0,.7)}
 </div>
 <div id="game-wrap">
   <canvas id="gameCanvas" width="800" height="500"></canvas>
+  <button id="mute-btn">♪ 音效</button>
   <div id="overlay">
     <div class="overlay-title" id="overlay-title">MIRROR LINK</div>
     <div class="overlay-sub"   id="overlay-sub">双轴同步解谜</div>
@@ -53,11 +107,58 @@ canvas{display:block;border-radius:4px;box-shadow:0 0 40px rgba(0,0,0,.7)}
       <div class="hint-item"><div class="hint-sq"  style="background:#ff3333;outline:1px solid #ff7777"></div>缩短连线（危险！）</div>
       <div class="hint-item"><div class="hint-tri"></div>陷阱</div>
     </div>
-    <button class="btn" id="start-btn">WASD / 方向键 开始</button>
+    <button class="btn" id="start-btn">触屏摇杆 / WASD 开始</button>
     <div class="overlay-keys">R 重开关卡　Esc 返回菜单</div>
   </div>
 </div>
+<!-- Virtual joystick (shown on touch devices, always visible as fallback) -->
+<div id="joystick-wrap">
+  <div>
+    <div class="joystick-zone" id="joystick">
+      <div class="joystick-knob" id="joystick-knob"></div>
+    </div>
+    <div class="joystick-label">摇杆</div>
+  </div>
+  <div id="joystick-hint">
+    触屏：拖动摇杆移动<br>
+    键盘：WASD / 方向键<br>
+    R 重开　Esc 菜单
+  </div>
+</div>
+</div>
 <script>
+// ═══════════════════════════════════════════════════════════════
+//  MIRROR LINK — 关卡编辑指南
+//
+//  每个关卡是一个对象，字段说明如下：
+//
+//  lmax   : 连线最大允许距离（像素）。越小越难。建议范围 90-999。
+//
+//  sA/sB  : 两个角色的起始坐标 {x, y}。
+//            ⚠ 必须相同，否则开局即死。
+//            房间坐标范围：x=14..366, y=14..486
+//
+//  wA/wB  : 左右房间的墙体数组（除边框外的额外墙）。
+//            [...B()] 表示包含四面边框墙，不要删除。
+//            墙体格式：{x, y, w, h}  — x/y 是左上角坐标，w/h 是宽高。
+//            房间总宽 390，总高 500。
+//
+//  tA/tB  : 左右房间的旋转陷阱数组。
+//            格式：{x, y, size, angle, speed}
+//            size=三角形大小(px)，speed=旋转速度（正=顺时针）。
+//            碰撞半径 = RADIUS(14) + size。
+//
+//  it     : 道具数组。格式：{x, y, side, type, amount}
+//            side  : 'A'=只在左房间, 'B'=只在右房间, 'both'=两侧各一个
+//            type  : 'extend'(绿/延长), 'shield'(黄/护盾), 'reduce'(红/缩短)
+//            amount: 延长/缩短的像素数；护盾固定写 1。
+//
+//  gA/gB  : 左右房间的终点。格式：{x, y, r}  r=半圆半径，建议 22。
+//
+//  修改示例：把第二关 lmax 改大一点更容易 → 把 160 改成 220。
+//  添加新墙：在 wA 里加 {x:150, y:200, w:14, h:200} 即可。
+// ═══════════════════════════════════════════════════════════════
+
 const canvas=document.getElementById('gameCanvas'),ctx=canvas.getContext('2d');
 const W=800,H=500,HALF=400,RADIUS=14,SPEED=3.0,ACCEL=0.30,BRAKE=0.18;
 const barFill=document.getElementById('bar-fill');
@@ -67,87 +168,354 @@ const dotsEl=document.getElementById('level-dots');
 const TOTAL=25;
 const GAME_KEYS=new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','A','s','S','d','D','w','W','r','R','Escape']);
 
-// Dots UI
+// ── Dots UI ───────────────────────────────────────
 for(let i=0;i<TOTAL;i++){const d=document.createElement('div');d.className='level-dot';d.id='dot'+i;dotsEl.appendChild(d);}
 
-// State
+// ── Audio ─────────────────────────────────────────
+let audioCtx=null,muted=false,bgGain=null,bgStarted=false;
+function getACtx(){
+  if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// Web Audio synth helper
+function playTone(freq,type,vol,dur,delay=0,detune=0){
+  if(muted)return;
+  const ac=getACtx();
+  const osc=ac.createOscillator();
+  const g=ac.createGain();
+  osc.connect(g);g.connect(ac.destination);
+  osc.type=type;osc.frequency.value=freq;osc.detune.value=detune;
+  const t=ac.currentTime+delay;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  osc.start(t);osc.stop(t+dur+0.05);
+}
+function playChord(freqs,type,vol,dur,delay=0){
+  freqs.forEach((f,i)=>playTone(f,type,vol/freqs.length,dur,delay+i*0.01));
+}
+
+// Sound effects
+function sfxPickup(type){
+  if(type==='extend') playChord([523,659,784],'sine',.18,.25);
+  else if(type==='shield') playChord([440,554,659],'sine',.15,.3);
+  else { playTone(200,'sawtooth',.12,.15); playTone(150,'sawtooth',.08,.12,.08); }
+}
+function sfxDie(){
+  playTone(180,'sawtooth',.2,.08);
+  playTone(120,'sawtooth',.18,.12,.07);
+  playTone(80,'square',.15,.2,.15);
+}
+function sfxClear(){
+  const notes=[523,659,784,1047];
+  notes.forEach((f,i)=>playChord([f,f*1.25],'sine',.15,.35,i*.12));
+}
+function sfxShieldBreak(){
+  playTone(800,'sine',.12,.04);
+  playTone(400,'sine',.10,.08,.04);
+}
+function sfxWallHit(){
+  playTone(90,'square',.06,.04);
+}
+function sfxWin(){
+  [523,659,784,1047,1319,1568].forEach((f,i)=>
+    playChord([f,f*1.5],'sine',.12,.4,i*.1));
+}
+
+// Background music — generative looping pattern
+function startBGM(){
+  if(bgStarted||muted)return;
+  bgStarted=true;
+  const ac=getACtx();
+
+  // Master gain
+  bgGain=ac.createGain();
+  bgGain.gain.value=0.13;
+  bgGain.connect(ac.destination);
+
+  // Reverb (simple convolver)
+  const rev=ac.createConvolver();
+  const revLen=ac.sampleRate*1.5;
+  const revBuf=ac.createBuffer(2,revLen,ac.sampleRate);
+  for(let c=0;c<2;c++){
+    const d=revBuf.getChannelData(c);
+    for(let i=0;i<revLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/revLen,3);
+  }
+  rev.buffer=revBuf;
+  const revGain=ac.createGain();revGain.gain.value=0.3;
+  bgGain.connect(rev);rev.connect(revGain);revGain.connect(ac.destination);
+
+  // Chord progression: Am - F - C - G (in A minor feel)
+  const BPM=116, beat=60/BPM;
+  const scale=[220,247,262,294,330,349,392,440,494,523,587,659,698,784]; // A minor scale tones
+  const chords=[
+    [220,262,330,440], // Am
+    [175,220,262,349], // F
+    [196,247,330,392], // C/G  (C with G bass)
+    [196,247,294,392], // G
+  ];
+  const bassNotes=[110,87,98,98];
+
+  let bar=0;
+  function scheduleBar(startTime){
+    const chord=chords[bar%4];
+    const bass=bassNotes[bar%4];
+
+    // Pad chord
+    chord.forEach((f,i)=>{
+      const osc=ac.createOscillator();const g2=ac.createGain();
+      osc.connect(g2);g2.connect(bgGain);
+      osc.type='sine';osc.frequency.value=f;
+      osc.detune.value=(Math.random()-0.5)*8;
+      g2.gain.setValueAtTime(0,startTime);
+      g2.gain.linearRampToValueAtTime(0.22,startTime+0.08);
+      g2.gain.setValueAtTime(0.22,startTime+beat*3.6);
+      g2.gain.linearRampToValueAtTime(0,startTime+beat*4);
+      osc.start(startTime);osc.stop(startTime+beat*4.1);
+    });
+
+    // Bass pulse (2 per bar)
+    [0,beat*2].forEach(offset=>{
+      const b=ac.createOscillator();const bg2=ac.createGain();
+      b.connect(bg2);bg2.connect(bgGain);
+      b.type='triangle';b.frequency.value=bass;
+      bg2.gain.setValueAtTime(0,startTime+offset);
+      bg2.gain.linearRampToValueAtTime(0.5,startTime+offset+0.02);
+      bg2.gain.exponentialRampToValueAtTime(0.001,startTime+offset+beat*0.9);
+      b.start(startTime+offset);b.stop(startTime+offset+beat);
+    });
+
+    // Melody arpeggio (picks 4 notes from scale)
+    for(let s=0;s<8;s++){
+      const fi=Math.floor(Math.random()*scale.length);
+      const freq=scale[fi]*(Math.random()<.3?2:1);
+      const osc=ac.createOscillator();const g2=ac.createGain();
+      osc.connect(g2);g2.connect(bgGain);
+      osc.type='triangle';osc.frequency.value=freq;
+      const st=startTime+s*beat*0.5+Math.random()*0.02;
+      g2.gain.setValueAtTime(0,st);
+      g2.gain.linearRampToValueAtTime(0.12,st+0.02);
+      g2.gain.exponentialRampToValueAtTime(0.001,st+beat*0.45);
+      osc.start(st);osc.stop(st+beat*0.5);
+    }
+
+    bar++;
+    const nextStart=startTime+beat*4;
+    // Schedule next bar 0.1s before it starts
+    const delay=(nextStart-ac.currentTime-0.1)*1000;
+    setTimeout(()=>scheduleBar(nextStart),Math.max(0,delay));
+  }
+  scheduleBar(ac.currentTime+0.1);
+}
+
+// Mute toggle
+let muteBtn=document.getElementById('mute-btn');
+muteBtn.addEventListener('click',()=>{
+  muted=!muted;
+  muteBtn.textContent=muted?'✕ 静音':'♪ 音效';
+  if(bgGain) bgGain.gain.value=muted?0:0.13;
+});
+
+// ── State ─────────────────────────────────────────
 let gs='menu',lvIdx=0,level=null,items=[];
 let goalA=false,goalB=false,pA,pB,Lmax;
 let dp=[],pp=[],flash=0,greenFlash=0,dtimer=0,ctimer=0;
-let barRatio=1,barRatioDisp=1; // smoothed display
+let barRatio=1,barRatioDisp=1;
 let shakeX=0,shakeY=0;
-let trail=[]; // [{x,y,side,life}]
+let trail=[];
 function mkP(x,y){return{x,y,vx:0,vy:0,hasShield:false,sf:0,ifr:0};}
 
-// Input — only preventDefault for game keys
+// ── Responsive scale ───────────────────────────────
+const scaleRoot=document.getElementById('scale-root');
+function applyScale(){
+  const totalH=document.documentElement.clientHeight;
+  const totalW=document.documentElement.clientWidth;
+  // Content natural size: 800 wide × (32+500+130) = 662 tall
+  const NATURAL_W=800, NATURAL_H=662;
+  const s=Math.min(totalW/NATURAL_W, totalH/NATURAL_H, 1);
+  scaleRoot.style.transform=`scale(${s})`;
+  // Center vertically after scale
+  const scaledH=NATURAL_H*s;
+  scaleRoot.style.marginTop=`${(totalH-scaledH)/2}px`;
+}
+applyScale();
+window.addEventListener('resize',applyScale);
+
+// ── Virtual joystick ──────────────────────────────
+const jZone =document.getElementById('joystick');
+const jKnob =document.getElementById('joystick-knob');
+const JR=55; // zone radius (half of 110px)
+let jdx=0,jdy=0; // -1..1 output
+
+function joystickMove(cx,cy){
+  const rect=jZone.getBoundingClientRect();
+  // Scale rect coords back to logical coords
+  const s=parseFloat(scaleRoot.style.transform.replace('scale(',''))||1;
+  const zx=(rect.left+rect.right)/2;
+  const zy=(rect.top+rect.bottom)/2;
+  let dx=(cx-zx)/s, dy=(cy-zy)/s;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const maxDist=JR*0.9;
+  if(dist>maxDist){dx=dx/dist*maxDist;dy=dy/dist*maxDist;}
+  // Move knob
+  jKnob.style.left=(50+dx/JR*50)+'%';
+  jKnob.style.top =(50+dy/JR*50)+'%';
+  // Normalise to -1..1 with deadzone
+  const norm=Math.min(dist/maxDist,1);
+  const dead=0.12;
+  jdx=norm>dead?(dx/maxDist):0;
+  jdy=norm>dead?(dy/maxDist):0;
+}
+function joystickReset(){
+  jKnob.style.left='50%';jKnob.style.top='50%';
+  jdx=0;jdy=0;
+  jZone.classList.remove('active');
+}
+
+// Touch events on joystick zone
+let jTouchId=null;
+jZone.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(gs==='playing'&&!bgStarted)startBGM();
+  const t=e.changedTouches[0];
+  jTouchId=t.identifier;
+  jZone.classList.add('active');
+  joystickMove(t.clientX,t.clientY);
+},{passive:false});
+jZone.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(t.identifier===jTouchId)joystickMove(t.clientX,t.clientY);
+  }
+},{passive:false});
+jZone.addEventListener('touchend',e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){if(t.identifier===jTouchId)joystickReset();}
+},{passive:false});
+jZone.addEventListener('touchcancel',joystickReset);
+
+// Mouse fallback for joystick (desktop testing)
+let jMouseDown=false;
+jZone.addEventListener('mousedown',e=>{
+  jMouseDown=true;jZone.classList.add('active');
+  joystickMove(e.clientX,e.clientY);
+  if(gs==='playing'&&!bgStarted)startBGM();
+});
+document.addEventListener('mousemove',e=>{if(jMouseDown)joystickMove(e.clientX,e.clientY);});
+document.addEventListener('mouseup',()=>{if(jMouseDown){jMouseDown=false;joystickReset();}});
+
+// ── Input ─────────────────────────────────────────
 const K={};
 document.addEventListener('keydown',e=>{
   K[e.key]=true;
   if(GAME_KEYS.has(e.key))e.preventDefault();
-  // R: restart current level
-  if((e.key==='r'||e.key==='R')&&gs!=='menu'){loadLv(lvIdx);gs='playing';}
-  // Esc: back to menu
-  if(e.key==='Escape'&&gs!=='menu'){gs='menu';showOv('MIRROR LINK','双轴同步解谜');}
+  if((e.key==='r'||e.key==='R')&&gs!=='menu'){ loadLv(lvIdx);gs='playing'; }
+  if(e.key==='Escape'&&gs!=='menu'){ gs='menu';showOv('MIRROR LINK','双轴同步解谜'); }
+  if(gs==='playing'&&!bgStarted) startBGM();
 });
 document.addEventListener('keyup',e=>{K[e.key]=false;});
 
 function inp(){
+  // Keyboard
   let dx=0,dy=0;
   if(K['ArrowLeft']||K['a']||K['A'])dx--;
   if(K['ArrowRight']||K['d']||K['D'])dx++;
   if(K['ArrowUp']||K['w']||K['W'])dy--;
   if(K['ArrowDown']||K['s']||K['S'])dy++;
-  if(dx&&dy){dx*=.707;dy*=.707;}
+  // Merge joystick (takes priority if active)
+  if(jdx!==0||jdy!==0){dx=jdx;dy=jdy;}
+  // Normalise diagonal
+  const len=Math.sqrt(dx*dx+dy*dy);
+  if(len>1){dx/=len;dy/=len;}
   return{dx,dy};
 }
 
-// Border walls
+// Border walls — always included via [...B()]
 function B(){return[{x:0,y:0,w:390,h:10},{x:0,y:490,w:390,h:10},{x:0,y:0,w:10,h:500},{x:380,y:0,w:10,h:500}];}
 
-// ══════════════════════════════════════════
-// LEVEL DATA — all verified: startDist=0, BFS passable, lmax < max separation
-// ══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  关卡数据 (mkLevels)
+//  ─ 前7关已大幅降低难度：lmax 更宽松、陷阱更少更慢、墙体更简单
+//  ─ 第8关起恢复正常节奏，逐渐加压
+// ═══════════════════════════════════════════════════════════════
 function mkLevels(){return[
 
-/* L1 ─ Tutorial: same rooms, no obstacles */
+// ─────────────────────────────────────────────────
+// WORLD 1：引入（L1-L7）— 轻松教学，无压力
+// ─────────────────────────────────────────────────
+
+/* L1 ─ 零障碍教学：感受两角色同步移动 */
 {lmax:999,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:B(),wB:B(),tA:[],tB:[],it:[],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L2 ─ A detours through gap; B walks free */
-{lmax:160,sA:{x:55,y:250},sB:{x:55,y:250},
+/* L2 ─ A侧有竖墙（上方缺口）；B侧无障碍直行
+        感受：B先到，A需要先上绕过墙再向右
+        lmax=999 完全无压力，专注理解被挡住的感觉 */
+{lmax:999,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:138,y:80,w:14,h:420}],wB:B(),tA:[],tB:[],
- it:[{x:75,y:250,side:'A',type:'extend',amount:100}],
+ it:[{x:200,y:50,side:'A',type:'extend',amount:80}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L3 ─ Vertical wall: A must detour through bottom gap, B walks free. X-sep ~180px. */
-{lmax:205,sA:{x:55,y:250},sB:{x:55,y:250},
- wA:[...B(),{x:190,y:10,w:14,h:300}],
- wB:B(),
- tA:[{x:280,y:150,size:14,angle:0,speed:0.018}],
- tB:[{x:280,y:350,size:14,angle:.6,speed:0.018}],
+/* L3 ─ A侧有竖墙（下方缺口）；B侧无障碍
+        比L2换了绕路方向，加一个延长道具练习拾取
+        lmax=999，仍无断线压力 */
+{lmax:999,sA:{x:55,y:250},sB:{x:55,y:250},
+ wA:[...B(),{x:190,y:10,w:14,h:300}],wB:B(),
+ tA:[],tB:[],
  it:[{x:110,y:380,side:'A',type:'extend',amount:80}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L4 ─ U-wall detour + first shield */
-{lmax:140,sA:{x:55,y:250},sB:{x:55,y:250},
- wA:[...B(),{x:140,y:100,w:14,h:300},{x:140,y:100,w:200,h:14},{x:140,y:400,w:200,h:14}],
- wB:B(),
- tA:[{x:280,y:250,size:14,angle:0,speed:0.02}],tB:[],
- it:[{x:90,y:180,side:'A',type:'shield',amount:1},{x:200,y:150,side:'both',type:'extend',amount:70}],
+/* L4 ─ 初见距离条：两侧都有竖墙但位置不同
+        A墙在x=160，B墙在x=220，两人在不同通道走，X距离自然拉大
+        无陷阱，lmax=280，可以从容体验距离条变化 */
+{lmax:280,sA:{x:55,y:250},sB:{x:55,y:250},
+ wA:[...B(),{x:160,y:10,w:14,h:220},{x:160,y:310,w:14,h:200}],
+ wB:[...B(),{x:220,y:10,w:14,h:220},{x:220,y:310,w:14,h:200}],
+ tA:[],tB:[],
+ it:[{x:55,y:250,side:'both',type:'extend',amount:80}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L5 ─ Corridor split + first reduce */
-{lmax:150,sA:{x:55,y:250},sB:{x:55,y:250},
- wA:[...B(),{x:10,y:220,w:260,h:12}],
- wB:[...B(),{x:10,y:280,w:260,h:12}],
- tA:[{x:200,y:140,size:14,angle:0,speed:0.02}],
- tB:[{x:200,y:360,size:14,angle:.8,speed:0.02}],
- it:[{x:310,y:140,side:'both',type:'extend',amount:70},{x:170,y:360,side:'B',type:'reduce',amount:50}],
+/* L5 ─ 初见陷阱：A侧一个慢速陷阱，护盾就在旁边
+        B侧无陷阱。先学会躲/用护盾再说别的
+        lmax=999，无断线压力 */
+{lmax:999,sA:{x:55,y:250},sB:{x:55,y:250},
+ wA:[...B(),{x:150,y:10,w:14,h:220},{x:150,y:310,w:14,h:200}],
+ wB:B(),
+ tA:[{x:240,y:250,size:14,angle:0,speed:0.015}],tB:[],
+ it:[{x:100,y:160,side:'A',type:'shield',amount:1}],
+ gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
+
+/* L6 ─ 初见减量道具：横向走廊，减量道具放在明显位置
+        玩家需要主动绕开红色方块
+        lmax=999，专注学习识别危险 */
+{lmax:999,sA:{x:55,y:250},sB:{x:55,y:250},
+ wA:[...B(),{x:10,y:160,w:280,h:12}],
+ wB:[...B(),{x:10,y:340,w:280,h:12}],
+ tA:[],tB:[],
+ it:[{x:200,y:100,side:'A',type:'reduce',amount:40},
+     {x:200,y:400,side:'B',type:'reduce',amount:40},
+     {x:310,y:250,side:'both',type:'extend',amount:60}],
  gA:{x:340,y:80,r:22},gB:{x:340,y:420,r:22}},
 
-/* L6 ─ Double vertical dividers 80px offset */
-{lmax:140,sA:{x:55,y:250},sB:{x:55,y:250},
+/* L7 ─ 综合复习：两侧都有墙+陷阱+道具，但 lmax 很宽松
+        U形墙让A绕路，B直行，两者拉开距离
+        有延长道具兜底，慢速陷阱，容错空间大 */
+{lmax:250,sA:{x:55,y:250},sB:{x:55,y:250},
+ wA:[...B(),{x:140,y:80,w:14,h:280},{x:140,y:80,w:180,h:14},{x:140,y:360,w:180,h:14}],
+ wB:B(),
+ tA:[{x:280,y:250,size:14,angle:0,speed:0.015}],tB:[],
+ it:[{x:90,y:160,side:'A',type:'shield',amount:1},
+     {x:200,y:130,side:'both',type:'extend',amount:70}],
+ gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
+
+// ─────────────────────────────────────────────────
+// WORLD 2：分歧（L8-L13）— 开始有压力
+// ─────────────────────────────────────────────────
+
+/* L8 ─ 双竖墙，80px错位，X距离持续漂移 */
+{lmax:155,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:100,y:10,w:12,h:220},{x:100,y:280,w:12,h:220},{x:210,y:10,w:12,h:220},{x:210,y:280,w:12,h:220}],
  wB:[...B(),{x:170,y:10,w:12,h:220},{x:170,y:280,w:12,h:220},{x:280,y:10,w:12,h:220},{x:280,y:280,w:12,h:220}],
  tA:[{x:155,y:150,size:13,angle:0,speed:0.022},{x:155,y:360,size:13,angle:1,speed:-0.022}],
@@ -155,7 +523,7 @@ function mkLevels(){return[
  it:[{x:55,y:150,side:'both',type:'extend',amount:65},{x:340,y:360,side:'both',type:'reduce',amount:45}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L7 ─ Vertical wall gap top/bottom swapped */
+/* L9 ─ 竖墙缺口位置不同（A上缺口 / B下缺口） */
 {lmax:150,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:160,y:80,w:14,h:420}],
  wB:[...B(),{x:160,y:10,w:14,h:420}],
@@ -164,7 +532,7 @@ function mkLevels(){return[
  it:[{x:90,y:200,side:'both',type:'extend',amount:65},{x:340,y:200,side:'both',type:'reduce',amount:45}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L8 ─ Staggered shelves 40px → constant Y drift */
+/* L10 ─ 横向货架错位40px，Y轴持续漂移 */
 {lmax:130,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:360,w:290,h:12},{x:10,y:240,w:290,h:12},{x:80,y:130,w:290,h:12}],
  wB:[...B(),{x:10,y:400,w:290,h:12},{x:80,y:280,w:290,h:12},{x:10,y:170,w:290,h:12}],
@@ -173,7 +541,7 @@ function mkLevels(){return[
  it:[{x:55,y:300,side:'A',type:'shield',amount:1},{x:340,y:340,side:'B',type:'shield',amount:1},{x:200,y:300,side:'both',type:'extend',amount:65}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L9 ─ A left-wall / B right-wall force cross */
+/* L11 ─ A左边墙 / B右边墙，强制互相穿越 */
 {lmax:145,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:10,y:10,w:14,h:200},{x:10,y:300,w:14,h:200}],
  wB:[...B(),{x:366,y:10,w:14,h:200},{x:366,y:300,w:14,h:200}],
@@ -182,7 +550,7 @@ function mkLevels(){return[
  it:[{x:340,y:150,side:'A',type:'extend',amount:65},{x:55,y:350,side:'B',type:'extend',amount:65},{x:200,y:250,side:'both',type:'reduce',amount:45}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L10 ─ Opposite Z-paths */
+/* L12 ─ Z形反向路径，目标上下颠倒 */
 {lmax:135,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:10,y:220,w:310,h:12},{x:80,y:360,w:310,h:12}],
  wB:[...B(),{x:80,y:140,w:310,h:12},{x:10,y:280,w:310,h:12}],
@@ -191,7 +559,7 @@ function mkLevels(){return[
  it:[{x:200,y:160,side:'both',type:'extend',amount:60},{x:200,y:340,side:'both',type:'extend',amount:60},{x:340,y:420,side:'both',type:'reduce',amount:45}],
  gA:{x:340,y:420,r:22},gB:{x:340,y:80,r:22}},
 
-/* L11 ─ Asymmetric vertical gap positions */
+/* L13 ─ 不对称竖墙，缺口高度不同 */
 {lmax:130,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:198,y:10,w:14,h:200},{x:198,y:300,w:14,h:200}],
  wB:[...B(),{x:148,y:10,w:14,h:170},{x:148,y:330,w:14,h:170}],
@@ -200,7 +568,11 @@ function mkLevels(){return[
  it:[{x:100,y:160,side:'A',type:'shield',amount:1},{x:100,y:340,side:'B',type:'shield',amount:1},{x:320,y:250,side:'both',type:'extend',amount:60},{x:200,y:450,side:'both',type:'reduce',amount:45}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L12 ─ Opposite S-bends */
+// ─────────────────────────────────────────────────
+// WORLD 3：压迫（L14-L18）
+// ─────────────────────────────────────────────────
+
+/* L14 ─ 反向S形 */
 {lmax:120,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:370,w:280,h:12},{x:10,y:260,w:280,h:12},{x:80,y:150,w:280,h:12}],
  wB:[...B(),{x:10,y:370,w:280,h:12},{x:80,y:260,w:280,h:12},{x:10,y:150,w:280,h:12}],
@@ -209,7 +581,7 @@ function mkLevels(){return[
  it:[{x:55,y:315,side:'A',type:'shield',amount:1},{x:340,y:315,side:'B',type:'shield',amount:1},{x:190,y:205,side:'both',type:'extend',amount:60},{x:190,y:100,side:'both',type:'extend',amount:60}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L13 ─ 30px staggered shelves */
+/* L15 ─ 30px错位货架 */
 {lmax:115,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:350,w:290,h:12},{x:10,y:250,w:290,h:12},{x:80,y:140,w:290,h:12}],
  wB:[...B(),{x:80,y:380,w:290,h:12},{x:10,y:280,w:290,h:12},{x:80,y:170,w:290,h:12}],
@@ -218,7 +590,7 @@ function mkLevels(){return[
  it:[{x:55,y:300,side:'A',type:'shield',amount:1},{x:340,y:330,side:'B',type:'shield',amount:1},{x:200,y:300,side:'both',type:'extend',amount:55},{x:200,y:90,side:'both',type:'extend',amount:55}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L14 ─ Offset shelves opposite gaps */
+/* L16 ─ 错位货架反向缺口 */
 {lmax:115,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:360,w:290,h:12},{x:10,y:220,w:290,h:12}],
  wB:[...B(),{x:10,y:390,w:290,h:12},{x:80,y:250,w:290,h:12}],
@@ -227,7 +599,7 @@ function mkLevels(){return[
  it:[{x:55,y:290,side:'A',type:'shield',amount:1},{x:340,y:320,side:'B',type:'shield',amount:1},{x:200,y:290,side:'both',type:'extend',amount:60},{x:340,y:450,side:'both',type:'reduce',amount:42}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L15 ─ 4-shelf opposite zigzag */
+/* L17 ─ 四段反向S形 */
 {lmax:130,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:10,y:380,w:330,h:12},{x:50,y:290,w:330,h:12},{x:10,y:200,w:330,h:12},{x:50,y:110,w:330,h:12}],
  wB:[...B(),{x:50,y:380,w:330,h:12},{x:10,y:290,w:330,h:12},{x:50,y:200,w:330,h:12},{x:10,y:110,w:330,h:12}],
@@ -236,7 +608,7 @@ function mkLevels(){return[
  it:[{x:55,y:335,side:'A',type:'shield',amount:1},{x:340,y:335,side:'B',type:'shield',amount:1},{x:200,y:335,side:'both',type:'extend',amount:60},{x:200,y:155,side:'both',type:'extend',amount:60}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L16 ─ 6-lane grid, B lanes 40px right */
+/* L18 ─ 六通道格栅，B通道右移40px */
 {lmax:120,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:110,y:10,w:12,h:200},{x:110,y:290,w:12,h:200},{x:220,y:10,w:12,h:200},{x:220,y:290,w:12,h:200},{x:310,y:10,w:12,h:200},{x:310,y:290,w:12,h:200}],
  wB:[...B(),{x:150,y:10,w:12,h:200},{x:150,y:290,w:12,h:200},{x:260,y:10,w:12,h:200},{x:260,y:290,w:12,h:200},{x:350,y:10,w:12,h:200},{x:350,y:290,w:12,h:200}],
@@ -245,7 +617,11 @@ function mkLevels(){return[
  it:[{x:55,y:160,side:'both',type:'extend',amount:60},{x:165,y:350,side:'A',type:'shield',amount:1},{x:205,y:350,side:'B',type:'shield',amount:1},{x:340,y:350,side:'both',type:'reduce',amount:40}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L17 ─ Checkerboard: A top half, B bottom half */
+// ─────────────────────────────────────────────────
+// WORLD 4：混沌（L19-L22）
+// ─────────────────────────────────────────────────
+
+/* L19 ─ 棋盘格栅，上下半区互换 */
 {lmax:115,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:10,w:12,h:160},{x:170,y:10,w:12,h:160},{x:260,y:10,w:12,h:160},{x:350,y:10,w:12,h:160},{x:125,y:170,w:12,h:80},{x:215,y:170,w:12,h:80},{x:305,y:170,w:12,h:80}],
  wB:[...B(),{x:80,y:330,w:12,h:160},{x:170,y:330,w:12,h:160},{x:260,y:330,w:12,h:160},{x:350,y:330,w:12,h:160},{x:125,y:250,w:12,h:80},{x:215,y:250,w:12,h:80},{x:305,y:250,w:12,h:80}],
@@ -254,7 +630,7 @@ function mkLevels(){return[
  it:[{x:55,y:80,side:'A',type:'shield',amount:1},{x:55,y:400,side:'B',type:'shield',amount:1},{x:200,y:250,side:'both',type:'extend',amount:55},{x:340,y:80,side:'both',type:'reduce',amount:40}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L18 ─ High-speed CW/CCW trap gauntlet */
+/* L20 ─ 高速陷阱走廊 */
 {lmax:120,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:390,w:290,h:12},{x:10,y:280,w:290,h:12},{x:80,y:170,w:290,h:12},{x:10,y:80,w:290,h:12}],
  wB:[...B(),{x:10,y:420,w:290,h:12},{x:80,y:310,w:290,h:12},{x:10,y:200,w:290,h:12},{x:80,y:100,w:290,h:12}],
@@ -263,7 +639,7 @@ function mkLevels(){return[
  it:[{x:55,y:335,side:'A',type:'shield',amount:1},{x:340,y:365,side:'B',type:'shield',amount:1},{x:200,y:335,side:'both',type:'extend',amount:55},{x:200,y:125,side:'both',type:'extend',amount:55}],
  gA:{x:340,y:55,r:22},gB:{x:340,y:55,r:22}},
 
-/* L19 ─ Reduce gauntlet: 4 reduces, 2 extends */
+/* L21 ─ 减量地雷阵 */
 {lmax:130,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:155,y:10,w:14,h:200},{x:155,y:300,w:14,h:200},{x:280,y:10,w:14,h:200},{x:280,y:300,w:14,h:200}],
  wB:[...B(),{x:115,y:10,w:14,h:200},{x:115,y:300,w:14,h:200},{x:240,y:10,w:14,h:200},{x:240,y:300,w:14,h:200}],
@@ -277,7 +653,7 @@ function mkLevels(){return[
  ],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L20 ─ Asymmetric spirals */
+/* L22 ─ 非对称螺旋 */
 {lmax:115,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:380,w:270,h:12},{x:10,y:280,w:270,h:12},{x:80,y:180,w:270,h:12},{x:10,y:80,w:270,h:12}],
  wB:[...B(),{x:10,y:400,w:270,h:12},{x:80,y:300,w:270,h:12},{x:10,y:200,w:270,h:12},{x:80,y:100,w:270,h:12}],
@@ -286,7 +662,11 @@ function mkLevels(){return[
  it:[{x:55,y:330,side:'A',type:'shield',amount:1},{x:340,y:350,side:'B',type:'shield',amount:1},{x:200,y:330,side:'both',type:'extend',amount:55},{x:200,y:130,side:'both',type:'extend',amount:55},{x:340,y:45,side:'both',type:'reduce',amount:38}],
  gA:{x:340,y:38,r:22},gB:{x:340,y:38,r:22}},
 
-/* L21 ─ Dense 8-wall grid, 10 fast traps */
+// ─────────────────────────────────────────────────
+// WORLD 5：终局（L23-L25）
+// ─────────────────────────────────────────────────
+
+/* L23 ─ 密集8墙格栅，10个高速陷阱 */
 {lmax:110,sA:{x:55,y:250},sB:{x:55,y:250},
  wA:[...B(),{x:90,y:10,w:12,h:180},{x:90,y:310,w:12,h:180},{x:170,y:10,w:12,h:180},{x:170,y:310,w:12,h:180},{x:250,y:10,w:12,h:180},{x:250,y:310,w:12,h:180},{x:330,y:10,w:12,h:180},{x:330,y:310,w:12,h:180}],
  wB:[...B(),{x:70,y:10,w:12,h:180},{x:70,y:310,w:12,h:180},{x:150,y:10,w:12,h:180},{x:150,y:310,w:12,h:180},{x:230,y:10,w:12,h:180},{x:230,y:310,w:12,h:180},{x:310,y:10,w:12,h:180},{x:310,y:310,w:12,h:180}],
@@ -295,16 +675,7 @@ function mkLevels(){return[
  it:[{x:55,y:155,side:'A',type:'shield',amount:1},{x:55,y:155,side:'B',type:'shield',amount:1},{x:55,y:365,side:'both',type:'extend',amount:55},{x:340,y:155,side:'both',type:'reduce',amount:38}],
  gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
 
-/* L22 ─ Cross-split double horizontal */
-{lmax:110,sA:{x:55,y:250},sB:{x:55,y:250},
- wA:[...B(),{x:10,y:158,w:330,h:12},{x:10,y:330,w:330,h:12}],
- wB:[...B(),{x:50,y:198,w:330,h:12},{x:50,y:290,w:330,h:12}],
- tA:[{x:200,y:100,size:12,angle:0,speed:0.030},{x:200,y:245,size:12,angle:1,speed:-0.030},{x:200,y:415,size:12,angle:.5,speed:0.030}],
- tB:[{x:200,y:140,size:12,angle:.5,speed:0.030},{x:200,y:245,size:12,angle:1.5,speed:-0.030},{x:200,y:360,size:12,angle:1,speed:0.030}],
- it:[{x:55,y:100,side:'A',type:'shield',amount:1},{x:55,y:140,side:'B',type:'shield',amount:1},{x:340,y:245,side:'both',type:'extend',amount:55},{x:55,y:415,side:'both',type:'reduce',amount:38}],
- gA:{x:340,y:250,r:22},gB:{x:340,y:250,r:22}},
-
-/* L23 ─ 5-shelf alternating anchors */
+/* L24 ─ 五层错位货架 */
 {lmax:105,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:10,y:390,w:300,h:12},{x:10,y:300,w:300,h:12},{x:10,y:210,w:300,h:12},{x:10,y:120,w:300,h:12},{x:10,y:55,w:300,h:12}],
  wB:[...B(),{x:80,y:390,w:300,h:12},{x:80,y:300,w:300,h:12},{x:80,y:210,w:300,h:12},{x:80,y:120,w:300,h:12},{x:80,y:55,w:300,h:12}],
@@ -313,16 +684,7 @@ function mkLevels(){return[
  it:[{x:340,y:345,side:'A',type:'shield',amount:1},{x:55,y:345,side:'B',type:'shield',amount:1},{x:190,y:255,side:'both',type:'extend',amount:55},{x:190,y:90,side:'both',type:'extend',amount:55},{x:340,y:450,side:'both',type:'reduce',amount:38}],
  gA:{x:340,y:38,r:22},gB:{x:340,y:38,r:22}},
 
-/* L24 ─ Opposite S, X-sep ~160px constant */
-{lmax:100,sA:{x:55,y:450},sB:{x:55,y:450},
- wA:[...B(),{x:80,y:380,w:290,h:12},{x:10,y:280,w:290,h:12},{x:80,y:180,w:290,h:12},{x:10,y:80,w:290,h:12}],
- wB:[...B(),{x:10,y:380,w:290,h:12},{x:80,y:280,w:290,h:12},{x:10,y:180,w:290,h:12},{x:80,y:80,w:290,h:12}],
- tA:[{x:340,y:330,size:12,angle:0,speed:0.032},{x:55,y:230,size:12,angle:1,speed:-0.032},{x:340,y:130,size:12,angle:.5,speed:0.032},{x:55,y:40,size:12,angle:1.5,speed:-0.032}],
- tB:[{x:55,y:330,size:12,angle:.5,speed:-0.032},{x:340,y:230,size:12,angle:1.5,speed:0.032},{x:55,y:130,size:12,angle:1,speed:-0.032},{x:340,y:40,size:12,angle:0,speed:0.032}],
- it:[{x:55,y:330,side:'A',type:'shield',amount:1},{x:340,y:330,side:'B',type:'shield',amount:1},{x:200,y:330,side:'both',type:'extend',amount:55},{x:200,y:130,side:'both',type:'extend',amount:55},{x:340,y:450,side:'both',type:'reduce',amount:38}],
- gA:{x:340,y:38,r:22},gB:{x:340,y:38,r:22}},
-
-/* L25 ─ TRUE FINAL: lmax=90, max trap speed */
+/* L25 ─ 终极关：反向S + 最小lmax + 最快陷阱 */
 {lmax:90,sA:{x:55,y:450},sB:{x:55,y:450},
  wA:[...B(),{x:80,y:380,w:290,h:12},{x:10,y:275,w:290,h:12},{x:80,y:170,w:290,h:12},{x:10,y:70,w:290,h:12}],
  wB:[...B(),{x:10,y:380,w:290,h:12},{x:80,y:275,w:290,h:12},{x:10,y:170,w:290,h:12},{x:80,y:70,w:290,h:12}],
@@ -335,7 +697,7 @@ function mkLevels(){return[
 
 let levels=mkLevels();
 
-// ── Load Level ────────────────────────────────────
+// ── Load Level ─────────────────────────────────────
 function loadLv(idx){
   level=JSON.parse(JSON.stringify(levels[idx]));
   Lmax=level.lmax;
@@ -365,11 +727,12 @@ function updDots(){
   }
 }
 
-// ── Collision ─────────────────────────────────────
+// ── Collision ──────────────────────────────────────
 function cRect(cx,cy,r,rx,ry,rw,rh){
   const nx=Math.max(rx,Math.min(cx,rx+rw)),ny=Math.max(ry,Math.min(cy,ry+rh));
   return (cx-nx)**2+(cy-ny)**2<r*r;
 }
+let prevPAx=0,prevPAy=0,prevPBx=0,prevPBy=0;
 function resolveW(p,walls){
   for(let i=0;i<4;i++){
     for(const w of walls){
@@ -381,16 +744,17 @@ function resolveW(p,walls){
   }
 }
 
-// ── Items ─────────────────────────────────────────
+// ── Items ──────────────────────────────────────────
 function pickup(item,player){
   for(const it of items)if(it._k===item._k)it.alive=false;
   const sx=item._r==='B'?item.x+HALF:item.x;
+  sfxPickup(item.type);
   if(item.type==='extend'){Lmax+=item.amount;spawnP(sx,item.y,'#44ffb0');}
   else if(item.type==='shield'){player.hasShield=true;player.sf=0;spawnP(sx,item.y,'#ffd700');}
   else{Lmax=Math.max(40,Lmax-item.amount);spawnP(sx,item.y,'#ff5555');}
 }
 
-// ── Particles ─────────────────────────────────────
+// ── Particles ──────────────────────────────────────
 function spawnD(x,y){
   for(let i=0;i<28;i++){
     const a=Math.random()*Math.PI*2,s=1.2+Math.random()*3.5;
@@ -408,27 +772,23 @@ function stepP(dt){
   for(const p of pp){p.x+=p.vx;p.y+=p.vy;p.vx*=.89;p.vy*=.89;p.life-=.030*dt;}
   dp=dp.filter(p=>p.life>0);
   pp=pp.filter(p=>p.life>0);
-  // trail decay
   for(const t of trail)t.life-=.06*dt;
   trail=trail.filter(t=>t.life>0);
 }
 
-// ── Death / Clear ──────────────────────────────────
+// ── Death / Clear ───────────────────────────────────
 function die(x,y){
   if(gs!=='playing')return;
+  sfxDie();
   spawnD(x,y);
-  flash=0.7;
-  gs='dead';
-  dtimer=1.4;
+  flash=0.7;gs='dead';dtimer=1.4;
 }
 
-// ── Update ────────────────────────────────────────
+// ── Update ─────────────────────────────────────────
 let lastTs=0;
 function update(ts){
   const dt=Math.min((ts-lastTs)/16.67,3);lastTs=ts;
   stepP(dt);
-
-  // Shake decay
   shakeX*=0.7;shakeY*=0.7;
 
   if(gs==='dead'){
@@ -442,7 +802,7 @@ function update(ts){
     if(greenFlash>0)greenFlash-=dt*.035;
     if(ctimer<=0){
       lvIdx++;
-      if(lvIdx>=TOTAL){gs='win';showOv('ALL CLEAR','全25关通关！');return;}
+      if(lvIdx>=TOTAL){gs='win';sfxWin();showOv('ALL CLEAR','全25关通关！');return;}
       loadLv(lvIdx);gs='playing';
     }
     return;
@@ -450,28 +810,25 @@ function update(ts){
   if(gs!=='playing')return;
   if(flash>0)flash-=dt*.04;
 
-  // ─ Movement with snappier feel ─
+  // Movement
   const{dx,dy}=inp();
   const hasInput=(dx!==0||dy!==0);
   if(hasInput){
-    // Accelerate toward target
     pA.vx+=(dx*SPEED-pA.vx)*ACCEL;pA.vy+=(dy*SPEED-pA.vy)*ACCEL;
     pB.vx+=(dx*SPEED-pB.vx)*ACCEL;pB.vy+=(dy*SPEED-pB.vy)*ACCEL;
   } else {
-    // Brake faster when no input
     pA.vx*=(1-BRAKE);pA.vy*=(1-BRAKE);
     pB.vx*=(1-BRAKE);pB.vy*=(1-BRAKE);
-    // Snap to zero to avoid micro-drift
     if(Math.abs(pA.vx)<0.04)pA.vx=0;if(Math.abs(pA.vy)<0.04)pA.vy=0;
     if(Math.abs(pB.vx)<0.04)pB.vx=0;if(Math.abs(pB.vy)<0.04)pB.vy=0;
   }
 
-  // Trail
   const speed2A=pA.vx*pA.vx+pA.vy*pA.vy;
   const speed2B=pB.vx*pB.vx+pB.vy*pB.vy;
   if(speed2A>0.5)trail.push({x:pA.x,y:pA.y,side:'A',life:1});
   if(speed2B>0.5)trail.push({x:pB.x,y:pB.y,side:'B',life:1});
 
+  prevPAx=pA.x;prevPAy=pA.y;prevPBx=pB.x;prevPBy=pB.y;
   pA.x+=pA.vx;pA.y+=pA.vy;
   pB.x+=pB.vx;pB.y+=pB.vy;
   const pad=RADIUS,rw=HALF-20;
@@ -479,25 +836,25 @@ function update(ts){
   pB.x=Math.max(pad,Math.min(rw-pad,pB.x));pB.y=Math.max(pad,Math.min(H-pad,pB.y));
   resolveW(pA,level.wA);resolveW(pB,level.wB);
 
-  // ─ Traps ─
+  // Traps
   for(const t of level.tA){
     t.angle+=t.speed;
     if(Math.hypot(pA.x-t.x,pA.y-t.y)<RADIUS+t.size&&pA.ifr<=0){
-      if(pA.hasShield){pA.hasShield=false;pA.sf=1.2;pA.ifr=90;spawnP(pA.x,pA.y,'#ffd700');}
+      if(pA.hasShield){pA.hasShield=false;pA.sf=1.2;pA.ifr=90;sfxShieldBreak();spawnP(pA.x,pA.y,'#ffd700');}
       else{die(pA.x,pA.y);return;}
     }
   }
   for(const t of level.tB){
     t.angle+=t.speed;
     if(Math.hypot(pB.x-t.x,pB.y-t.y)<RADIUS+t.size&&pB.ifr<=0){
-      if(pB.hasShield){pB.hasShield=false;pB.sf=1.2;pB.ifr=90;spawnP(pB.x+HALF,pB.y,'#ffd700');}
+      if(pB.hasShield){pB.hasShield=false;pB.sf=1.2;pB.ifr=90;sfxShieldBreak();spawnP(pB.x+HALF,pB.y,'#ffd700');}
       else{die(pB.x+HALF,pB.y);return;}
     }
   }
   if(pA.sf>0)pA.sf-=dt*.045;if(pB.sf>0)pB.sf-=dt*.045;
   if(pA.ifr>0)pA.ifr-=dt;if(pB.ifr>0)pB.ifr-=dt;
 
-  // ─ Items ─
+  // Items
   for(const it of items){
     if(!it.alive)continue;
     it.pulse+=.07;
@@ -505,34 +862,31 @@ function update(ts){
     if(Math.hypot(p.x-it.x,p.y-it.y)<RADIUS+13)pickup(it,p);
   }
 
-  // ─ Distance ─
+  // Distance
   const d=Math.hypot(pA.x-pB.x,pA.y-pB.y);
   barRatio=Math.max(0,1-d/Lmax);
-  barRatioDisp+=(barRatio-barRatioDisp)*0.15; // smooth bar display
+  barRatioDisp+=(barRatio-barRatioDisp)*0.15;
   if(d>Lmax){
     shakeX=(Math.random()-.5)*8;shakeY=(Math.random()-.5)*8;
     flash=0.8;
     die((pA.x+pB.x+HALF)/2,(pA.y+pB.y)/2);
     return;
   }
-  // Bar color
   const c=barRatioDisp>.6?'#00cc44':barRatioDisp>.3?`hsl(${Math.round(40+barRatioDisp*80)},90%,50%)`:'#ff5500';
   barFill.style.width=(barRatioDisp*100)+'%';
   barFill.style.background=c;
-  // Shake bar when critical
   const barEl=document.getElementById('bar-container');
-  if(barRatio<0.2&&gs==='playing'){
+  if(barRatio<0.2){
     const s=(0.2-barRatio)*14;
     barEl.style.transform=`translateX(${(Math.random()-.5)*s}px)`;
-  } else {
-    barEl.style.transform='';
-  }
+  } else barEl.style.transform='';
 
-  // ─ Goals ─
+  // Goals
   goalA=Math.hypot(pA.x-level.gA.x,pA.y-level.gA.y)<level.gA.r+RADIUS-4;
   goalB=Math.hypot(pB.x-level.gB.x,pB.y-level.gB.y)<level.gB.r+RADIUS-4;
   if(goalA&&goalB){
     gs='levelclear';ctimer=1.7;greenFlash=1;
+    sfxClear();
     spawnP(level.gA.x,level.gA.y,'#00ff88');
     spawnP(level.gB.x+HALF,level.gB.y,'#00ff88');
     spawnP(level.gA.x,level.gA.y,'#ffffff');
@@ -540,65 +894,40 @@ function update(ts){
   }
 }
 
-// ── Draw ──────────────────────────────────────────
+// ── Draw ───────────────────────────────────────────
 function draw(){
-  ctx.clearRect(0,0,W,H);
-  if(!level)return;
-
+  ctx.clearRect(0,0,W,H);if(!level)return;
   ctx.save();
   if(shakeX||shakeY)ctx.translate(shakeX,shakeY);
 
-  // Backgrounds
   ctx.fillStyle='#1a1e30';ctx.fillRect(0,0,HALF-2,H);
   ctx.fillStyle='#181c2c';ctx.fillRect(HALF+2,0,HALF-2,H);
   ctx.fillStyle='#20243c';ctx.fillRect(HALF-2,0,4,H);
 
-  // Subtle dot-grid background
   drawGrid(0,0,HALF-2,'A');
   drawGrid(HALF+2,0,HALF-2,'B');
-
   drawRoom(0,level.wA,level.tA,pA,level.gA,'A');
   drawRoom(HALF,level.wB,level.tB,pB,level.gB,'B');
 
-  // Items
   for(const it of items){
     if(!it.alive)continue;
     drawItem(it.x+(it._r==='B'?HALF:0),it.y,it.type,it.pulse);
   }
-
   drawLink();
 
-  // Particles
   ctx.save();
-  for(const p of dp){
-    ctx.globalAlpha=p.life*p.life;
-    ctx.fillStyle='#fff';
-    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fill();
-  }
-  for(const p of pp){
-    ctx.globalAlpha=p.life;
-    ctx.fillStyle=p.color;
-    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fill();
-  }
+  for(const p of dp){ctx.globalAlpha=p.life*p.life;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fill();}
+  for(const p of pp){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fill();}
   ctx.restore();
 
-  // Flash overlays
-  if(flash>0){
-    ctx.fillStyle=`rgba(255,30,30,${flash*.38})`;
-    ctx.fillRect(0,0,W,H);
-  }
-  if(greenFlash>0){
-    ctx.fillStyle=`rgba(0,220,90,${greenFlash*.25})`;
-    ctx.fillRect(0,0,W,H);
-  }
-
-  ctx.restore(); // restore shake translate
+  if(flash>0){ctx.fillStyle=`rgba(255,30,30,${flash*.38})`;ctx.fillRect(0,0,W,H);}
+  if(greenFlash>0){ctx.fillStyle=`rgba(0,220,90,${greenFlash*.25})`;ctx.fillRect(0,0,W,H);}
+  ctx.restore();
 }
 
 function drawGrid(ox,oy,w,side){
   const col=side==='A'?'rgba(80,100,180,.04)':'rgba(60,90,160,.04)';
-  ctx.save();ctx.translate(ox,oy);
-  ctx.strokeStyle=col;ctx.lineWidth=1;
+  ctx.save();ctx.translate(ox,oy);ctx.strokeStyle=col;ctx.lineWidth=1;
   const step=30;
   for(let x=step;x<w;x+=step){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
   for(let y=step;y<H;y+=step){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
@@ -609,131 +938,88 @@ function drawRoom(ox,walls,traps,player,goal,side){
   ctx.save();ctx.translate(ox,0);
   const isA=side==='A';
 
-  // Trails (drawn before player, under walls)
   for(const t of trail){
     if(t.side!==side)continue;
-    const col=isA?`rgba(255,80,80,${t.life*.18})`:`rgba(80,140,255,${t.life*.18})`;
-    ctx.fillStyle=col;
+    ctx.fillStyle=isA?`rgba(255,80,80,${t.life*.18})`:`rgba(80,140,255,${t.life*.18})`;
     ctx.beginPath();ctx.arc(t.x,t.y,RADIUS*.7*t.life,0,Math.PI*2);ctx.fill();
   }
 
-  // Walls with subtle glow
   for(const w of walls){
-    // Inner glow
-    const wallGlow=ctx.createLinearGradient(w.x,w.y,w.x,w.y+w.h);
-    wallGlow.addColorStop(0,'#464c68');
-    wallGlow.addColorStop(1,'#343955');
-    ctx.fillStyle=wallGlow;
-    ctx.fillRect(w.x,w.y,w.w,w.h);
-    // Edge highlight
+    const wg=ctx.createLinearGradient(w.x,w.y,w.x,w.y+w.h);
+    wg.addColorStop(0,'#464c68');wg.addColorStop(1,'#343955');
+    ctx.fillStyle=wg;ctx.fillRect(w.x,w.y,w.w,w.h);
     ctx.strokeStyle='rgba(120,140,200,.12)';ctx.lineWidth=1;
     ctx.strokeRect(w.x+.5,w.y+.5,w.w-1,w.h-1);
   }
 
-  // Goal — pulsing semicircle
-  const t=Date.now()/1000;
-  const goalPulse=Math.sin(t*2.2)*.15+1;
+  const nt=Date.now()/1000;
+  const gp=Math.sin(nt*2.2)*.15+1;
   ctx.fillStyle=isA?'rgba(255,80,80,.15)':'rgba(80,140,255,.15)';
-  ctx.strokeStyle=isA?'#ff7777':'#6699ff';
-  ctx.lineWidth=2;
-  ctx.save();
-  ctx.translate(goal.x,goal.y);ctx.scale(goalPulse,goalPulse);
+  ctx.strokeStyle=isA?'#ff7777':'#6699ff';ctx.lineWidth=2;
+  ctx.save();ctx.translate(goal.x,goal.y);ctx.scale(gp,gp);
   ctx.beginPath();
-  if(isA){ctx.arc(0,0,goal.r,-Math.PI/2,Math.PI/2);}
-  else{ctx.arc(0,0,goal.r,Math.PI/2,3*Math.PI/2);}
+  if(isA)ctx.arc(0,0,goal.r,-Math.PI/2,Math.PI/2);
+  else   ctx.arc(0,0,goal.r,Math.PI/2,3*Math.PI/2);
   ctx.closePath();ctx.fill();ctx.stroke();
-  // Outer glow ring
-  ctx.strokeStyle=isA?'rgba(255,100,100,.2)':'rgba(100,150,255,.2)';
-  ctx.lineWidth=6;
+  ctx.strokeStyle=isA?'rgba(255,100,100,.2)':'rgba(100,150,255,.2)';ctx.lineWidth=6;
   ctx.beginPath();
-  if(isA){ctx.arc(0,0,goal.r+5,-Math.PI/2,Math.PI/2);}
-  else{ctx.arc(0,0,goal.r+5,Math.PI/2,3*Math.PI/2);}
-  ctx.stroke();
-  ctx.restore();
+  if(isA)ctx.arc(0,0,goal.r+5,-Math.PI/2,Math.PI/2);
+  else   ctx.arc(0,0,goal.r+5,Math.PI/2,3*Math.PI/2);
+  ctx.stroke();ctx.restore();
 
-  // Traps
   for(const tr of traps)drawTrap(tr.x,tr.y,tr.size,tr.angle);
-
-  // Player
   drawPlayer(player,side);
   ctx.restore();
 }
 
 function drawPlayer(p,side){
   const col=side==='A'?'#ff4444':'#4488ff';
-  const glow=side==='A'?'rgba(255,80,80,':' rgba(60,130,255,';
   const vis=p.ifr<=0||Math.floor(p.ifr/6)%2===0;
-
-  // Shield aura
   if(p.hasShield){
-    const t=Date.now()/1000;
-    const pulse=Math.sin(t*4)*.15+1;
+    const nt=Date.now()/1000,pulse=Math.sin(nt*4)*.15+1;
     ctx.strokeStyle='rgba(255,215,0,.9)';ctx.lineWidth=2.5;
     ctx.beginPath();ctx.arc(p.x,p.y,(RADIUS+6)*pulse,0,Math.PI*2);ctx.stroke();
     ctx.strokeStyle='rgba(255,215,0,.18)';ctx.lineWidth=9;
     ctx.beginPath();ctx.arc(p.x,p.y,(RADIUS+11)*pulse,0,Math.PI*2);ctx.stroke();
   } else if(p.sf>0){
-    // Shield break flash
     ctx.strokeStyle=`rgba(255,255,255,${Math.min(1,p.sf)})`;ctx.lineWidth=5;
     ctx.beginPath();ctx.arc(p.x,p.y,RADIUS+8,0,Math.PI*2);ctx.stroke();
     ctx.strokeStyle=`rgba(255,215,0,${Math.min(1,p.sf*.6)})`;ctx.lineWidth=3;
     ctx.beginPath();ctx.arc(p.x,p.y,RADIUS+14,0,Math.PI*2);ctx.stroke();
   }
-
   if(!vis)return;
-
-  // Soft outer glow
   const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,RADIUS*2.8);
   g.addColorStop(0,col+'55');g.addColorStop(1,'transparent');
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,RADIUS*2.8,0,Math.PI*2);ctx.fill();
-
-  // Body
-  const bodyG=ctx.createRadialGradient(p.x-3,p.y-3,1,p.x,p.y,RADIUS);
-  bodyG.addColorStop(0,col+'ff');
-  bodyG.addColorStop(1,col.replace('ff','bb')+'cc');
-  ctx.fillStyle=bodyG;
-  ctx.beginPath();ctx.arc(p.x,p.y,RADIUS,0,Math.PI*2);ctx.fill();
-
-  // Specular
+  const bg=ctx.createRadialGradient(p.x-3,p.y-3,1,p.x,p.y,RADIUS);
+  bg.addColorStop(0,col+'ff');bg.addColorStop(1,col.slice(0,7)+'cc');
+  ctx.fillStyle=bg;ctx.beginPath();ctx.arc(p.x,p.y,RADIUS,0,Math.PI*2);ctx.fill();
   ctx.fillStyle='rgba(255,255,255,.32)';
   ctx.beginPath();ctx.arc(p.x-4,p.y-4,RADIUS*.38,0,Math.PI*2);ctx.fill();
 }
 
 function drawTrap(x,y,size,angle){
   ctx.save();ctx.translate(x,y);ctx.rotate(angle);
-  // Glow
   ctx.shadowColor='#ff6600';ctx.shadowBlur=10;
   ctx.fillStyle='#ff5520';ctx.strokeStyle='#ff8050';ctx.lineWidth=1.5;
-  ctx.beginPath();
-  ctx.moveTo(0,-size);ctx.lineTo(size*.866,size*.5);ctx.lineTo(-size*.866,size*.5);
+  ctx.beginPath();ctx.moveTo(0,-size);ctx.lineTo(size*.866,size*.5);ctx.lineTo(-size*.866,size*.5);
   ctx.closePath();ctx.fill();ctx.stroke();
-  ctx.shadowBlur=0;
-  ctx.restore();
+  ctx.shadowBlur=0;ctx.restore();
 }
 
 function drawItem(x,y,type,pulse){
   const s=11+Math.sin(pulse)*2.5;
   ctx.save();ctx.translate(x,y);
   const col=type==='extend'?'#44ffb0':type==='shield'?'#ffd700':'#ff3333';
-  const glowCol=type==='extend'?'#00ff88':type==='shield'?'#ffcc00':'#ff2222';
-
-  // Ambient glow
+  const gc=type==='extend'?'#00ff88':type==='shield'?'#ffcc00':'#ff2222';
   const gr=ctx.createRadialGradient(0,0,0,0,0,s*2.8);
-  gr.addColorStop(0,glowCol+'33');gr.addColorStop(1,'transparent');
+  gr.addColorStop(0,gc+'33');gr.addColorStop(1,'transparent');
   ctx.fillStyle=gr;ctx.fillRect(-s*3,-s*3,s*6,s*6);
-
-  // Shadow glow
-  ctx.shadowColor=glowCol;ctx.shadowBlur=8;
-  // Body
-  ctx.fillStyle=col;
-  ctx.fillRect(-s/2,-s/2,s,s);
+  ctx.shadowColor=gc;ctx.shadowBlur=8;
+  ctx.fillStyle=col;ctx.fillRect(-s/2,-s/2,s,s);
   ctx.shadowBlur=0;
-  // Inner highlight
-  ctx.fillStyle='rgba(255,255,255,.25)';
-  ctx.fillRect(-s/2,-s/2,s*.55,s*.45);
-  // Border
-  ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1;
-  ctx.strokeRect(-s/2,-s/2,s,s);
+  ctx.fillStyle='rgba(255,255,255,.25)';ctx.fillRect(-s/2,-s/2,s*.55,s*.45);
+  ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1;ctx.strokeRect(-s/2,-s/2,s,s);
   ctx.restore();
 }
 
@@ -745,43 +1031,241 @@ function drawLink(){
   else if(ratio>.6)col='#00cc44';
   else if(ratio>.3)col=`hsl(${Math.round(40+ratio*80)},90%,55%)`;
   else col='#ff5500';
-
   const lw=Math.max(1,ratio*3.8);
-  // Glow pass
   ctx.strokeStyle=col;ctx.lineWidth=lw+4;ctx.globalAlpha=0.12;
   ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
   ctx.globalAlpha=1;
-  // Main line (dashed)
   ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.setLineDash([6,5]);
   ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
   ctx.setLineDash([]);
-  // End dots
   ctx.fillStyle=col;
   ctx.beginPath();ctx.arc(ax,ay,3.5,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.arc(bx,by,3.5,0,Math.PI*2);ctx.fill();
 }
 
-// ── Overlay ───────────────────────────────────────
+// ══════════════════════════════════════════════════
+// 🔊 音效 & 背景音乐（Web Audio API，无需外部文件）
+//
+// 如何调整音量：
+//   sfxVol.gain.value = 0~1   （音效总音量，默认 0.4）
+//   bgmVol.gain.value = 0~1   （背景音乐音量，默认 0.18）
+//
+// 如何关闭音乐/音效：
+//   bgmVol.gain.value = 0     （静音背景音乐）
+//   sfxVol.gain.value = 0     （静音音效）
+// ══════════════════════════════════════════════════
+let AC=null,sfxVol,bgmVol,bgmNodes=[];
+
+function getAC(){
+  if(!AC){
+    AC=new(window.AudioContext||window.webkitAudioContext)();
+    // SFX 总线
+    sfxVol=AC.createGain();sfxVol.gain.value=0.4;sfxVol.connect(AC.destination);
+    // BGM 总线（稍低避免压音效）
+    bgmVol=AC.createGain();bgmVol.gain.value=0.18;bgmVol.connect(AC.destination);
+  }
+  return AC;
+}
+
+// ── 通用音效工具 ──────────────────────────────────
+function playTone(freq,type,startVol,endVol,dur,startTime,dest){
+  const ac=getAC();
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type=type;o.frequency.setValueAtTime(freq,startTime);
+  g.gain.setValueAtTime(startVol,startTime);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.001,endVol),startTime+dur);
+  o.connect(g);g.connect(dest||sfxVol);
+  o.start(startTime);o.stop(startTime+dur+0.01);
+}
+
+function playNoise(startVol,endVol,dur,startTime,dest){
+  const ac=getAC();
+  const buf=ac.createBuffer(1,ac.sampleRate*dur,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1);
+  const src=ac.createBufferSource(),g=ac.createGain();
+  src.buffer=buf;
+  g.gain.setValueAtTime(startVol,startTime);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.001,endVol),startTime+dur);
+  src.connect(g);g.connect(dest||sfxVol);
+  src.start(startTime);
+}
+
+// ── 音效定义 ──────────────────────────────────────
+function sfxPickup(type){
+  const ac=getAC(),t=ac.currentTime;
+  if(type==='extend'){
+    // 清脆上升双音
+    playTone(440,'sine',0.5,0.001,0.12,t);
+    playTone(660,'sine',0.4,0.001,0.12,t+0.06);
+  } else if(type==='shield'){
+    // 温暖和弦
+    playTone(330,'sine',0.4,0.001,0.2,t);
+    playTone(495,'sine',0.3,0.001,0.2,t+0.02);
+    playTone(660,'sine',0.25,0.001,0.2,t+0.04);
+  } else {
+    // 减量：低沉下降
+    playTone(200,'sawtooth',0.3,0.001,0.15,t);
+    playTone(120,'sawtooth',0.2,0.001,0.15,t+0.05);
+  }
+}
+
+function sfxShieldBreak(){
+  const ac=getAC(),t=ac.currentTime;
+  playTone(440,'square',0.4,0.001,0.08,t);
+  playTone(220,'square',0.3,0.001,0.12,t+0.06);
+  playNoise(0.15,0.001,0.1,t+0.04);
+}
+
+function sfxDie(){
+  const ac=getAC(),t=ac.currentTime;
+  // 下降扫频
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type='sawtooth';
+  o.frequency.setValueAtTime(400,t);
+  o.frequency.exponentialRampToValueAtTime(60,t+0.4);
+  g.gain.setValueAtTime(0.5,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.4);
+  o.connect(g);g.connect(sfxVol);
+  o.start(t);o.stop(t+0.45);
+  playNoise(0.2,0.001,0.3,t+0.05);
+}
+
+function sfxClear(){
+  const ac=getAC(),t=ac.currentTime;
+  // 上升琶音
+  const notes=[523,659,784,1047];
+  notes.forEach((f,i)=>{
+    playTone(f,'sine',0.4,0.001,0.2,t+i*0.08);
+  });
+}
+
+function sfxWin(){
+  const ac=getAC(),t=ac.currentTime;
+  const melody=[523,659,784,1047,784,1047,1319];
+  melody.forEach((f,i)=>{
+    playTone(f,'sine',0.45,0.001,0.25,t+i*0.1);
+    playTone(f*1.5,'sine',0.15,0.001,0.2,t+i*0.1+0.05);
+  });
+}
+
+// ── 背景音乐（程序化合成欢快小曲） ──────────────
+// 使用简单的音序器循环，C大调，120 BPM
+// 和弦进行：C - Am - F - G（每4拍一个和弦）
+const BGM_BPM=120;
+const BGM_BEAT=60/BGM_BPM; // 0.5秒/拍
+// 旋律音符序列（音高Hz, 时值拍数）
+const BGM_MELODY=[
+  [523,1],[659,0.5],[784,0.5],[659,1],[523,0.5],[440,0.5],
+  [440,1],[523,0.5],[659,0.5],[523,1],[440,0.5],[392,0.5],
+  [349,1],[440,0.5],[523,0.5],[440,1],[349,0.5],[330,0.5],
+  [392,1],[440,0.5],[523,0.5],[659,1],[523,0.5],[440,0.5],
+];
+// 和弦伴奏（每2拍变化，低音+五度）
+const BGM_CHORDS=[
+  [[131,196],[131,196],[110,165],[110,165],
+   [87,131],[87,131],[98,147],[98,147]],
+];
+
+let bgmLoop=null,bgmPlaying=false,bgmStartTime=0,bgmLoopLen=0;
+
+function startBGM(){
+  if(bgmPlaying)return;
+  bgmPlaying=true;
+  bgmLoopLen=BGM_MELODY.reduce((s,n)=>s+n[1],0)*BGM_BEAT;
+  scheduleBGM();
+}
+
+function scheduleBGM(){
+  if(!bgmPlaying)return;
+  const ac=getAC();
+  const now=ac.currentTime;
+  bgmStartTime=now+0.05;
+  _playBGMCycle(bgmStartTime);
+  bgmLoop=setTimeout(scheduleBGM,(bgmLoopLen-0.1)*1000);
+}
+
+function _playBGMCycle(startAt){
+  const ac=getAC();
+  let t=startAt;
+
+  // 旋律声部
+  for(const [freq,beats] of BGM_MELODY){
+    const dur=beats*BGM_BEAT;
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.type='triangle';
+    o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.6,t+0.02);
+    g.gain.setValueAtTime(0.6,t+dur*0.7);
+    g.gain.linearRampToValueAtTime(0,t+dur*0.95);
+    o.connect(g);g.connect(bgmVol);
+    o.start(t);o.stop(t+dur);
+    t+=dur;
+  }
+
+  // 和弦伴奏声部（每拍一个低音+五度）
+  const chords=[
+    [131,196],[131,196],[110,165],[110,165],
+    [87,131],[87,131],[98,147],[98,147],
+    [131,196],[131,196],[110,165],[110,165],
+    [87,131],[87,131],[98,147],[98,147],
+  ];
+  let ct=startAt;
+  for(const [root,fifth] of chords){
+    const dur=BGM_BEAT;
+    [root,fifth].forEach(freq=>{
+      const o=ac.createOscillator(),g=ac.createGain();
+      o.type='sine';o.frequency.setValueAtTime(freq,ct);
+      g.gain.setValueAtTime(0,ct);
+      g.gain.linearRampToValueAtTime(0.35,ct+0.04);
+      g.gain.setValueAtTime(0.35,ct+dur*0.6);
+      g.gain.linearRampToValueAtTime(0,ct+dur*0.9);
+      o.connect(g);g.connect(bgmVol);
+      o.start(ct);o.stop(ct+dur);
+    });
+    ct+=dur;
+  }
+
+  // 打击音（每2拍一个轻鼓点）
+  let bt=startAt;
+  const totalBeats=BGM_MELODY.reduce((s,n)=>s+n[1],0);
+  for(let b=0;b<totalBeats;b+=2){
+    playNoise(0.12,0.001,0.08,bt,bgmVol);
+    // 轻敲高频
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.type='square';o.frequency.setValueAtTime(180,bt);
+    o.frequency.exponentialRampToValueAtTime(80,bt+0.06);
+    g.gain.setValueAtTime(0.18,bt);g.gain.exponentialRampToValueAtTime(0.001,bt+0.1);
+    o.connect(g);g.connect(bgmVol);o.start(bt);o.stop(bt+0.12);
+    bt+=2*BGM_BEAT;
+  }
+}
+
+function stopBGM(){
+  bgmPlaying=false;
+  if(bgmLoop)clearTimeout(bgmLoop);
+}
+
+// ── Overlay ────────────────────────────────────────
 function showOv(t,s){
-  overlayTitle.textContent=t;
-  overlaySub.textContent=s;
+  overlayTitle.textContent=t;overlaySub.textContent=s;
   overlay.classList.remove('hidden');
   document.getElementById('start-btn').textContent=
-    t==='MIRROR LINK'?'WASD / 方向键 开始':'再来一次';
+    t==='MIRROR LINK'?'触屏摇杆 / WASD 开始':'再来一次';
 }
 function hideOv(){overlay.classList.add('hidden');}
-document.getElementById('start-btn').addEventListener('click',()=>{
+function startGame(){
   if(gs==='win')lvIdx=0;
-  levels=mkLevels();
-  loadLv(lvIdx);
-  hideOv();
-  gs='playing';
-});
+  levels=mkLevels();loadLv(lvIdx);hideOv();gs='playing';
+  startBGM();
+}
+document.getElementById('start-btn').addEventListener('click',startGame);
+document.getElementById('start-btn').addEventListener('touchend',e=>{e.preventDefault();startGame();});
 
-// ── Loop ──────────────────────────────────────────
+// ── Loop ───────────────────────────────────────────
 function loop(ts){update(ts);draw();requestAnimationFrame(loop);}
-loadLv(0);
-requestAnimationFrame(ts=>{lastTs=ts;loop(ts);});
+loadLv(0);requestAnimationFrame(ts=>{lastTs=ts;loop(ts);});
 </script>
 </body>
 </html>
