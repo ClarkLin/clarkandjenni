@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>LOOIROBOT</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --c: #3ecfff;
+  --bg: #07090d;
+  /* 设计 / 默认画面基准（1280×720） */
+  --screen-w: 1280px;
+  --screen-h: 720px;
+  /* 左侧眼睛区域整体缩放（右侧按钮调节） */
+  --stage-scale: 1;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: 'Space Mono', monospace;
+  cursor: none;
+  touch-action: manipulation;
+  /* 小屏上减少亚像素模糊 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* scanline overlay for CRT feel */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.08) 3px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  /* 必须在 .scene 之下，否则横纹会叠在眼睛/按钮上 */
+  z-index: 2;
+}
+
+/* subtle grid */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(62,207,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(62,207,255,0.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* main layout — 左侧眼睛区居中，右侧竖排按钮 */
+.scene {
+  position: fixed; inset: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  z-index: 20;
+  gap: 0;
+  isolation: isolate;
+}
+
+/* 缩放后 .stage 的视觉范围会盖住右侧，必须用层级保证右侧栏永远在上层接收点击 */
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px 6px 8px;
+  transform: scale(var(--stage-scale));
+  transform-origin: center center;
+  transition: transform 0.2s ease;
+  will-change: transform;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- EYES ---- */
+.eyes-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 1280×720 下明显眼距；随 vmin 缩放 */
+  gap: clamp(40px, 12vmin, 120px);
+  padding: 0 8px;
+  transform: translateZ(0);
+}
+
+.eye {
+  border-radius: 50%;
+  background: var(--c);
+  flex-shrink: 0;
+  position: relative;
+  backface-visibility: hidden;
+  transition:
+    width  .4s cubic-bezier(.34,1.56,.64,1),
+    height .4s cubic-bezier(.34,1.56,.64,1),
+    border-radius .4s cubic-bezier(.34,1.56,.64,1),
+    background .35s ease,
+    transform .35s cubic-bezier(.34,1.56,.64,1),
+    opacity .35s ease;
+  overflow: visible;
+}
+
+/* blink lid */
+.lid {
+  position: absolute; inset: -1px;
+  background: var(--bg);
+  border-radius: inherit;
+  transform: scaleY(0);
+  transform-origin: top;
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* brow */
+.brow {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 10%;
+  border-radius: 99px;
+  background: var(--c);
+  opacity: 0;
+  transition: opacity .3s, transform .3s, top .3s, background .35s;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ---- FACE STATUS ---- */
+.face-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: min(100%, 360px);
+  padding: 0 clamp(8px, 2vmin, 20px);
+  margin-top: clamp(6px, 1.5vh, 14px);
+  opacity: 0.5;
+}
+.dots {
+  display: flex; gap: 5px;
+}
+.dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--c);
+  animation: dp 2.4s ease-in-out infinite;
+}
+.dot:nth-child(2) { animation-delay:.3s; }
+.dot:nth-child(3) { animation-delay:.6s; }
+@keyframes dp { 0%,100%{opacity:.7} 50%{opacity:.2} }
+
+.mood-txt {
+  font-size: clamp(8px, 1.6vmin, 11px);
+  letter-spacing: 2px;
+  color: var(--c);
+  text-transform: uppercase;
+}
+
+/* ---- 右侧表情按钮（竖排） ---- */
+.emo-col {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px 12px 8px 6px;
+  max-height: 100%;
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.emo-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.zoom-tools {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  margin-top: 6px;
+  border-top: 1px solid rgba(62,207,255,0.14);
+  position: relative;
+  z-index: 11;
+  pointer-events: auto;
+}
+
+.zoom-tools .zoom-pct {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(9px, 1.4vmin, 11px);
+  color: rgba(62,207,255,0.35);
+  text-align: center;
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+
+.emo {
+  background: rgba(62,207,255,0.06);
+  border: 1px solid rgba(62,207,255,0.22);
+  border-radius: 99px;
+  color: rgba(62,207,255,0.45);
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(10px, 1.85vmin, 13px);
+  padding: 7px 14px;
+  min-width: 72px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all .2s;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.emo:hover, .emo:active { border-color: var(--c); color: var(--c); background: rgba(62,207,255,0.12); }
+.emo.on { border-color: var(--c); color: var(--c); background: rgba(62,207,255,0.14); }
+
+/* particles */
+.p-wrap { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+.p {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--c);
+  opacity: 0;
+  animation: pup linear infinite;
+}
+@keyframes pup {
+  0%   { opacity:0; transform:translateY(0) scale(1); }
+  10%  { opacity:.35; }
+  90%  { opacity:.1; }
+  100% { opacity:0; transform:translateY(-100px) scale(.2); }
+}
+
+/* cursor dot */
+.cur { position:fixed; width:8px; height:8px; border-radius:50%; background:var(--c); pointer-events:none; z-index:9999; transform:translate(-50%,-50%); mix-blend-mode:screen; }
+
+/* blush cheek */
+.blush {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: opacity .4s;
+  z-index: 3;
+}
+</style>
+</head>
+<body>
+
+<div class="p-wrap" id="pw"></div>
+<div class="cur" id="cur"></div>
+
+<div class="scene">
+  <div class="stage" id="stage">
+    <div class="eyes-row" id="eyesRow">
+      <div style="position:relative;">
+        <div class="brow" id="browL"></div>
+        <div class="eye" id="eL"><div class="lid" id="lidL"></div></div>
+        <div class="blush" id="blushL" style="opacity:0;"></div>
+      </div>
+      <div style="position:relative;">
+        <div class="brow" id="browR"></div>
+        <div class="eye" id="eR"><div class="lid" id="lidR"></div></div>
+        <div class="blush" id="blushR" style="opacity:0;"></div>
+      </div>
+    </div>
+
+    <div class="face-status">
+      <div class="dots">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
+      <div class="mood-txt" id="moodTxt">IDLE</div>
+      <div style="font-size:8px;color:rgba(62,207,255,0.25);letter-spacing:2px;">LOOI</div>
+    </div>
+  </div>
+
+  <div class="emo-col">
+    <div class="emo-list">
+      <button class="emo on"  onclick="pick('normal',this)">正常</button>
+      <button class="emo"     onclick="pick('happy',this)">开心</button>
+      <button class="emo"     onclick="pick('love',this)">爱心</button>
+      <button class="emo"     onclick="pick('angry',this)">愤怒</button>
+      <button class="emo"     onclick="pick('sad',this)">难过</button>
+      <button class="emo"     onclick="pick('surprised',this)">惊讶</button>
+      <button class="emo"     onclick="pick('sleep',this)">睡眠</button>
+      <button class="emo"     onclick="pick('x',this)">X X</button>
+      <button class="emo"     onclick="pick('scan',this)">扫描</button>
+      <button class="emo"     onclick="pick('wink',this)">眨眼</button>
+    </div>
+    <div class="zoom-tools">
+      <span class="zoom-pct" id="zoomPct" aria-live="polite">100%</span>
+      <button type="button" class="emo zoom-btn" id="zoomIn" title="放大眼睛区域">放大</button>
+      <button type="button" class="emo zoom-btn" id="zoomOut" title="缩小">缩小</button>
+      <button type="button" class="emo zoom-btn" id="zoomReset" title="恢复 100%">重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const eL = document.getElementById('eL');
+const eR = document.getElementById('eR');
+const lidL = document.getElementById('lidL');
+const lidR = document.getElementById('lidR');
+const browL = document.getElementById('browL');
+const browR = document.getElementById('browR');
+const blushL = document.getElementById('blushL');
+const blushR = document.getElementById('blushR');
+const moodTxt = document.getElementById('moodTxt');
+const cur = document.getElementById('cur');
+const stageEl = document.getElementById('stage');
+const zoomPctEl = document.getElementById('zoomPct');
+const ZOOM_LS = 'robotEyesStageScale';
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 0.1;
+
+let mx = innerWidth/2, my = innerHeight/2;
+let stageScale = 1;
+let mood = 'normal';
+let blinkTO, scanRAF;
+let blinking = false;
+
+// --- responsive eye size（按左侧舞台区域算，避免副屏宽度被按钮挤爆后仍按整窗缩放） ---
+function eyeSize() {
+  const w = stageEl ? stageEl.clientWidth : innerWidth;
+  const h = stageEl ? stageEl.clientHeight : innerHeight;
+  const s = Math.min(w, h);
+  return Math.max(20, Math.round(s * 0.24));
+}
+
+// --- cursor ---
+document.addEventListener('mousemove', e => {
+  mx = e.clientX; my = e.clientY;
+  cur.style.left = mx+'px'; cur.style.top = my+'px';
+});
+document.addEventListener('touchmove', e => {
+  const t = e.touches[0];
+  mx = t.clientX; my = t.clientY;
+}, { passive:true });
+
+function clampZoom(v) {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(v * 100) / 100));
+}
+
+function applyStageScale(next) {
+  stageScale = clampZoom(next);
+  document.documentElement.style.setProperty('--stage-scale', String(stageScale));
+  if (zoomPctEl) zoomPctEl.textContent = Math.round(stageScale * 100) + '%';
+  try { localStorage.setItem(ZOOM_LS, String(stageScale)); } catch (_) {}
+}
+
+function loadStageScale() {
+  try {
+    const raw = localStorage.getItem(ZOOM_LS);
+    if (raw != null && raw !== '') {
+      const n = parseFloat(raw);
+      if (!Number.isNaN(n)) stageScale = clampZoom(n);
+    }
+  } catch (_) {}
+  document.documentElement.style.setProperty('--stage-scale', String(stageScale));
+  if (zoomPctEl) zoomPctEl.textContent = Math.round(stageScale * 100) + '%';
+}
+
+function bindZoom(id, fn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fn();
+  });
+}
+bindZoom('zoomIn', () => applyStageScale(stageScale + ZOOM_STEP));
+bindZoom('zoomOut', () => applyStageScale(stageScale - ZOOM_STEP));
+bindZoom('zoomReset', () => applyStageScale(1));
+
+// --- particles ---
+const pw = document.getElementById('pw');
+for (let i=0; i<14; i++) {
+  const p = document.createElement('div');
+  p.className = 'p';
+  const sz = 1.5 + Math.random()*3;
+  p.style.cssText = `width:${sz}px;height:${sz}px;left:${Math.random()*100}%;bottom:${Math.random()*20}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*7}s;`;
+  pw.appendChild(p);
+}
+
+// --- helpers ---
+const C = '#3ecfff';
+
+function sz(el, w, h, r, bg, border) {
+  const base = eyeSize();
+  el.style.width  = Math.round(w * base / 100) + 'px';
+  el.style.height = Math.round(h * base / 100) + 'px';
+  el.style.borderRadius = r;
+  el.style.background = bg || C;
+  el.style.border = border || 'none';
+  el.style.overflow = 'hidden';
+  el.style.display = '';
+}
+
+function both(w, h, r, bg, border) {
+  sz(eL, w, h, r, bg, border);
+  sz(eR, w, h, r, bg, border);
+}
+
+function brows(show, aL, aR, top, color) {
+  const base = eyeSize();
+  const c = color || C;
+  [browL, browR].forEach(b => {
+    b.style.width = Math.round(base * 0.75) + 'px';
+    b.style.top = top || '-14px';
+    b.style.background = c;
+    b.style.opacity = show ? '1' : '0';
+  });
+  browL.style.transform = `translateX(-50%) rotate(${aL||0}deg)`;
+  browR.style.transform = `translateX(-50%) rotate(${aR||0}deg)`;
+}
+
+function blush(show, color) {
+  const base = eyeSize();
+  const bw = Math.round(base * 0.6), bh = Math.round(base * 0.3);
+  const c = color || '#ff6ba8';
+  [blushL, blushR].forEach(b => {
+    b.style.width  = bw+'px';
+    b.style.height = bh+'px';
+    b.style.background = c+'55';
+    b.style.opacity = show ? '1' : '0';
+  });
+  blushL.style.left = Math.round(-bw*0.3)+'px';
+  blushL.style.top  = Math.round(eyeSize()*0.6)+'px';
+  blushR.style.right = Math.round(-bw*0.3)+'px';
+  blushR.style.top   = Math.round(eyeSize()*0.6)+'px';
+}
+
+function makeSvgEye(el, svgContent, wMult, hMult) {
+  const base = eyeSize();
+  el.innerHTML = svgContent;
+  el.style.width  = Math.round(base*wMult)+'px';
+  el.style.height = Math.round(base*hMult)+'px';
+  el.style.background = 'transparent';
+  el.style.border = 'none';
+  el.style.borderRadius = '0';
+  el.style.overflow = 'visible';
+  el.appendChild(el === eL ? lidL : lidR);
+}
+
+function makeX(el, color) {
+  const base = eyeSize();
+  const s = base, arm = Math.round(base*0.22);
+  el.style.width = s+'px'; el.style.height = s+'px';
+  el.style.background = 'transparent'; el.style.border = 'none';
+  el.style.borderRadius = '0'; el.style.overflow = 'visible';
+  el.style.position = 'relative'; el.style.display = 'flex';
+  el.style.alignItems = 'center'; el.style.justifyContent = 'center';
+  el.innerHTML = `
+    <span style="position:absolute;width:${s}px;height:${arm}px;border-radius:${arm/2}px;background:${color};transform:rotate(45deg);"></span>
+    <span style="position:absolute;width:${s}px;height:${arm}px;border-radius:${arm/2}px;background:${color};transform:rotate(-45deg);"></span>`;
+  el.appendChild(el === eL ? lidL : lidR);
+}
+
+function makeHeart(el) {
+  const base = eyeSize();
+  const svgH = Math.round(base*0.85);
+  el.innerHTML = `<svg width="${base}" height="${svgH}" viewBox="0 0 60 55" shape-rendering="geometricPrecision"><path d="M30 50 C30 50 5 32 5 16 C5 8 11 2 18 2 C23 2 28 6 30 11 C32 6 37 2 42 2 C49 2 55 8 55 16 C55 32 30 50 30 50Z" fill="#ff6ba8"/></svg>`;
+  el.style.width = base+'px'; el.style.height = svgH+'px';
+  el.style.background = 'transparent'; el.style.border = 'none';
+  el.style.borderRadius = '0'; el.style.overflow = 'visible';
+  el.appendChild(el === eL ? lidL : lidR);
+}
+
+// --- moods ---
+const labels = {
+  normal:'IDLE', happy:'HAPPY :)', love:'LOVE ♡', angry:'ALERT!',
+  sad:'SAD...', surprised:'WOW!!', sleep:'ZZZ...', x:'X_X', scan:'SCAN', wink:'WINK ;)'
+};
+
+const defs = {
+  normal() {
+    both(100,100,'50%',C);
+    brows(false); blush(false);
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+    scheduleBlink();
+  },
+  happy() {
+    both(115, 55, '0 0 50% 50%', C);
+    brows(false); blush(true, '#ff6ba8');
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+    scheduleBlink(3500);
+  },
+  love() {
+    makeHeart(eL); makeHeart(eR);
+    brows(false); blush(true, '#ff6ba8');
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+    scheduleBlink(4000);
+  },
+  angry() {
+    both(100,100,'50%','#ff4040');
+    brows(true, 18, -18, '-20%', '#ff4040');
+    blush(false);
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+    scheduleBlink(800);
+  },
+  sad() {
+    both(115, 55, '50% 50% 0 0', '#6ba8ff');
+    brows(true, 15, -15, '-18%', '#6ba8ff');
+    blush(false);
+    const ty = Math.round(eyeSize()*0.14);
+    eL.style.transform = `translateY(${ty}px)`;
+    eR.style.transform = `translateY(${ty}px)`;
+    scheduleBlink(5000);
+  },
+  surprised() {
+    const base = eyeSize();
+    both(120,120,'50%','#ffe566');
+    brows(true, -12, 12, '-22%', '#ffe566');
+    blush(true,'#ffe566');
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+    scheduleBlink(2000);
+  },
+  sleep() {
+    both(115, 18, '9px', '#44556b');
+    brows(false); blush(false);
+    [eL,eR].forEach(e=>{ e.style.transform=''; e.style.opacity='0.65'; });
+  },
+  x() {
+    makeX(eL, C); makeX(eR, C);
+    brows(false); blush(false);
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+  },
+  scan() {
+    both(100,100,'50%',C);
+    brows(false); blush(false);
+    [eL,eR].forEach(e=>{ e.style.transform=''; });
+    doScan();
+    scheduleBlink(1800);
+  },
+  wink() {
+    sz(eL, 100,100,'50%',C);
+    const base = eyeSize();
+    eR.style.width = base+'px'; eR.style.height = Math.round(base*0.15)+'px';
+    eR.style.borderRadius = '8px'; eR.style.background = C;
+    eR.style.overflow = 'hidden'; eR.style.border = 'none'; eR.style.display = '';
+    brows(false); blush(false);
+    eL.style.transform = ''; eR.style.transform = '';
+    scheduleBlink(3000);
+  }
+};
+
+// --- scan animation ---
+let scanAngle = 0;
+function doScan() {
+  if (mood !== 'scan') return;
+  scanAngle += 4;
+  const base = eyeSize();
+  const r = base * 0.28;
+  const ox = Math.cos(scanAngle*Math.PI/180)*r;
+  const oy = Math.sin(scanAngle*Math.PI/180)*r;
+  [eL, eR].forEach(el => {
+    let d = el.querySelector('.sdot');
+    if (!d) {
+      d = document.createElement('div');
+      d.className = 'sdot';
+      const ds = Math.round(base*0.18);
+      d.style.cssText = `position:absolute;width:${ds}px;height:${ds}px;border-radius:50%;background:#07090d;top:50%;left:50%;z-index:3;`;
+      el.style.position = 'relative';
+      el.insertBefore(d, el.firstChild);
+    }
+    d.style.transform = `translate(calc(-50% + ${Math.round(ox)}px), calc(-50% + ${Math.round(oy)}px))`;
+  });
+  scanRAF = setTimeout(doScan, 28);
+}
+
+// --- blink ---
+function scheduleBlink(ms) {
+  clearTimeout(blinkTO);
+  const d = ms || (2000 + Math.random()*2500);
+  blinkTO = setTimeout(() => { doBlink(); if (mood!=='sleep') scheduleBlink(ms); }, d);
+}
+
+function doBlink() {
+  if (blinking || mood==='sleep'||mood==='x') return;
+  blinking = true;
+  [lidL,lidR].forEach(l=>{ l.style.transition='transform .08s ease-in'; l.style.transform='scaleY(1)'; });
+  setTimeout(()=>{
+    [lidL,lidR].forEach(l=>{ l.style.transition='transform .1s ease-out'; l.style.transform='scaleY(0)'; });
+    setTimeout(()=>{ blinking=false; }, 120);
+  }, 95);
+}
+
+// --- mouse tracking ---
+function getCenter(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left+r.width/2, y: r.top+r.height/2 };
+}
+
+function raf() {
+  if (mood==='normal'||mood==='happy'||mood==='surprised'||mood==='wink'||mood==='scan') {
+    const max = mood==='surprised' ? eyeSize()*0.25 : eyeSize()*0.18;
+    [eL,eR].forEach(el => {
+      if (mood==='wink' && el===eR) return;
+      const c = getCenter(el);
+      const dx=mx-c.x, dy=my-c.y;
+      const dist=Math.sqrt(dx*dx+dy*dy)||1;
+      const clamp=Math.min(max, dist*0.22);
+      const ox=(dx/dist)*clamp, oy=(dy/dist)*clamp;
+      const curr = el.style.transform || '';
+      if (!curr.includes('translateY') || mood!=='sad') {
+        el.style.transform = `translate(${Math.round(ox)}px,${Math.round(oy)}px)`;
+      }
+    });
+  }
+  requestAnimationFrame(raf);
+}
+
+// --- pick mood ---
+function pick(m, btn) {
+  clearTimeout(blinkTO);
+  clearTimeout(scanRAF);
+  document.querySelectorAll('.emo-list .emo').forEach(b=>b.classList.remove('on'));
+  if(btn) btn.classList.add('on');
+  mood = m;
+  [eL,eR].forEach(e=>{ e.innerHTML=''; e.appendChild(e===eL?lidL:lidR); e.style.opacity='1'; e.style.transform=''; });
+  moodTxt.textContent = labels[m]||m.toUpperCase();
+  defs[m]();
+}
+
+// --- tap anywhere to cycle ---
+const moodList = ['normal','happy','love','angry','sad','surprised','sleep','x','scan','wink'];
+let moodIdx = 0;
+document.body.addEventListener('click', e => {
+  if (e.target.closest('.emo-list .emo') || e.target.closest('.zoom-tools')) return;
+  moodIdx = (moodIdx+1) % moodList.length;
+  const m = moodList[moodIdx];
+  const btn = [...document.querySelectorAll('.emo-list .emo')].find(b => (b.getAttribute('onclick')||'').includes(`'${m}'`));
+  pick(m, btn);
+});
+
+function emoButtonFor(m) {
+  return [...document.querySelectorAll('.emo-list .emo')].find(b => (b.getAttribute('onclick')||'').includes(`'${m}'`));
+}
+
+// resize recalc（保持当前表情与按钮高亮）
+window.addEventListener('resize', () => { pick(mood, emoButtonFor(mood)); });
+
+// init
+loadStageScale();
+pick('normal', document.querySelector('.emo-list .emo'));
+raf();
+</script>
+</body>
+</html>
