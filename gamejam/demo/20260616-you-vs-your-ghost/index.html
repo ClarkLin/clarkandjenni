@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Time Loop Shooter</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            color: #fff;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        #gameCanvas { display: block; width: 100vw; height: 100vh; }
+        #ui {
+            position: fixed; top: 0; left: 0; width: 100%;
+            pointer-events: none; z-index: 10;
+        }
+        #topBar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px;
+            background: rgba(0,0,0,0.6);
+            border-bottom: 2px solid #ff0040;
+        }
+        .ui-label { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 2px; }
+        .ui-value { font-size: 24px; font-weight: bold; color: #ff0040; text-shadow: 0 0 10px #ff0040; }
+        #roundInfo { text-align: center; }
+        #roundInfo .ui-value { color: #00ff88; text-shadow: 0 0 10px #00ff88; }
+        #timeInfo .ui-value { color: #ffcc00; text-shadow: 0 0 10px #ffcc00; }
+        #scoreInfo { text-align: right; }
+        #joystick {
+            position: fixed; bottom: 80px; left: 80px;
+            width: 120px; height: 120px; border-radius: 50%;
+            border: 3px solid rgba(255,0,64,0.4);
+            background: rgba(255,0,64,0.1);
+            pointer-events: auto; z-index: 20; display: none;
+        }
+        #joystickKnob {
+            position: absolute; width: 50px; height: 50px; border-radius: 50%;
+            background: rgba(255,0,64,0.8);
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px #ff0040;
+        }
+        #gameOverScreen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; pointer-events: auto;
+        }
+        #gameOverScreen h1 {
+            font-size: 48px; color: #ff0040; text-shadow: 0 0 20px #ff0040;
+            margin-bottom: 20px; text-align: center;
+        }
+        #gameOverScreen .subtitle { font-size: 20px; color: #00aaff; margin-bottom: 40px; text-shadow: 0 0 10px #00aaff; }
+        #finalScore { font-size: 36px; color: #ffcc00; margin-bottom: 20px; }
+        #finalRound { font-size: 24px; color: #888; margin-bottom: 40px; }
+        .game-btn {
+            padding: 15px 40px; font-size: 20px;
+            background: #ff0040; color: #fff; border: none; cursor: pointer;
+            font-family: 'Courier New', monospace; text-transform: uppercase;
+            letter-spacing: 3px; box-shadow: 0 0 20px #ff0040; transition: all 0.3s;
+        }
+        .game-btn:hover { background: #ff3366; box-shadow: 0 0 30px #ff0040; transform: scale(1.05); }
+        #startScreen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; pointer-events: auto;
+        }
+        #startScreen h1 {
+            font-size: 42px; color: #ff0040; text-shadow: 0 0 20px #ff0040;
+            margin-bottom: 20px; text-align: center;
+        }
+        #startScreen .desc {
+            font-size: 16px; color: #aaa; max-width: 500px;
+            text-align: center; line-height: 1.6; margin-bottom: 40px;
+        }
+        #startScreen .desc span { color: #00aaff; font-weight: bold; }
+        /* Tutorial overlay */
+        #tutorialOverlay {
+            position: fixed; bottom: 0; left: 0; width: 100%;
+            display: none; justify-content: center;
+            z-index: 50; pointer-events: none;
+            padding-bottom: 30px;
+        }
+        #tutorialOverlay.active { display: flex; }
+        #tutorialBox {
+            background: rgba(10,10,26,0.75);
+            border: 1px solid rgba(255,0,64,0.4);
+            padding: 14px 24px;
+            max-width: 440px;
+            text-align: center;
+            backdrop-filter: blur(4px);
+            border-radius: 6px;
+        }
+        #tutorialBox h2 {
+            font-size: 16px; color: #ff0040; margin-bottom: 6px;
+            text-shadow: 0 0 8px #ff0040;
+        }
+        #tutorialBox p {
+            font-size: 13px; color: #ccc; line-height: 1.5; margin-bottom: 4px;
+        }
+        #tutorialBox p span { color: #ffcc00; font-weight: bold; }
+        #tutorialBox p .blue { color: #00aaff; font-weight: bold; }
+        #tutorialBox p .green { color: #00ff88; font-weight: bold; }
+        #tutorialBox .hint {
+            font-size: 12px; color: #666; margin-top: 6px;
+            animation: blink 1.2s ease-in-out infinite;
+        }
+        @keyframes blink { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+        /* Round transition */
+        #roundTransition {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 40; pointer-events: none; display: none; text-align: center;
+        }
+        #roundTransition.active { display: block; }
+        #roundTransition h2 {
+            font-size: 52px; color: #00ff88; text-shadow: 0 0 30px #00ff88;
+            animation: roundPop 0.6s ease-out;
+        }
+        #roundTransition p {
+            font-size: 18px; color: #aaa; margin-top: 8px;
+        }
+        @keyframes roundPop {
+            0% { transform: scale(2); opacity: 0; }
+            60% { transform: scale(0.9); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @media (max-width: 768px) {
+            #joystick { display: block; }
+            #topBar { padding: 8px 12px; }
+            .ui-value { font-size: 18px; }
+            .ui-label { font-size: 11px; }
+            #tutorialBox { max-width: 92vw; padding: 10px 14px; }
+            #tutorialBox h2 { font-size: 14px; }
+            #tutorialBox p { font-size: 12px; }
+            #tutorialBox .hint { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <div id="topBar">
+            <div id="roundInfo">
+                <div class="ui-label">ROUND</div>
+                <div class="ui-value" id="roundValue">0</div>
+            </div>
+            <div id="timeInfo">
+                <div class="ui-label">TIME</div>
+                <div class="ui-value" id="timeValue">0</div>
+            </div>
+            <div id="scoreInfo">
+                <div class="ui-label">SCORE</div>
+                <div class="ui-value" id="scoreValue">0</div>
+            </div>
+        </div>
+    </div>
+    <div id="joystick"><div id="joystickKnob"></div></div>
+    <div id="startScreen">
+        <h1>TIME LOOP SHOOTER</h1>
+        <div class="desc">
+            Top-down cyberpunk pixel shooter<br><br>
+            Round 1: Eliminate the <span class="green">green bugs</span><br>
+            Round 2: <span class="blue">Your past ghost appears</span>, replaying all your moves<br>
+            <span>Dodge your own bullets!</span><br><br>
+            WASD / Arrow Keys to move, auto-aim & shoot<br>
+            Mobile users use the joystick
+        </div>
+        <button id="startBtn" class="game-btn">START GAME</button>
+    </div>
+    <div id="gameOverScreen">
+        <h1 id="deathTitle">KILLED BY YOURSELF</h1>
+        <div class="subtitle" id="deathSubtitle">Killed by bullets from your past self</div>
+        <div id="finalScore">Score: 0</div>
+        <div id="finalRound">Round: 1</div>
+        <button id="restartBtn" class="game-btn">RESTART</button>
+    </div>
+    <div id="tutorialOverlay">
+        <div id="tutorialBox">
+            <h2 id="tutorialTitle">TUTORIAL</h2>
+            <p id="tutorialText"></p>
+            <div class="hint" id="tutorialHint">WASD / Arrow Keys to move</div>
+        </div>
+    </div>
+    <div id="roundTransition">
+        <h2 id="rtTitle"></h2>
+        <p id="rtSubtitle"></p>
+    </div>
+
+    <script>
+    (function() {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const roundValue = document.getElementById('roundValue');
+        const timeValue = document.getElementById('timeValue');
+        const scoreValue = document.getElementById('scoreValue');
+        const deathTitle = document.getElementById('deathTitle');
+        const deathSubtitle = document.getElementById('deathSubtitle');
+        const finalScore = document.getElementById('finalScore');
+        const finalRound = document.getElementById('finalRound');
+        const joystick = document.getElementById('joystick');
+        const joystickKnob = document.getElementById('joystickKnob');
+        const tutorialOverlay = document.getElementById('tutorialOverlay');
+        const tutorialTitle = document.getElementById('tutorialTitle');
+        const tutorialText = document.getElementById('tutorialText');
+        const tutorialHint = document.getElementById('tutorialHint');
+        const roundTransition = document.getElementById('roundTransition');
+        const rtTitle = document.getElementById('rtTitle');
+        const rtSubtitle = document.getElementById('rtSubtitle');
+
+        let W, H;
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ======== TUTORIAL STEPS ========
+        const TUTORIAL_STEPS = [
+            {
+                title: 'ROUND 0 - Tutorial',
+                text: 'Welcome! Use <span>WASD</span> or <span>Arrow Keys</span> to move your red astronaut.<br>Give it a try!',
+                hint: 'Move to start the tutorial',
+                condition: 'moved'
+            },
+            {
+                title: 'Auto-Shooting',
+                text: 'Great! You auto-aim at the nearest <span class="green">green bug</span> and shoot.<br>Kill them for points!',
+                hint: 'Wait for monsters to appear...',
+                condition: 'kill'
+            },
+            {
+                title: 'Tutorial Complete!',
+                text: 'Get ready for the <span class="blue">Ghost Demo</span>…<br>Your movement and shooting will be replayed!',
+                hint: 'Ghost demo coming up...',
+                condition: 'auto'
+            }
+        ];
+
+        // ======== GAME STATE ========
+        const GAME = {
+            state: 'start', // start, tutorial, playing, gameover, ghostDemo
+            round: 0,
+            score: 0,
+            timeLeft: 0,
+            roundTime: 30,
+            spawnTimer: 0,
+            spawnInterval: 1.2,
+            lastTime: 0,
+            shake: 0,
+            elapsed: 0, // accumulated time in current round
+            shootCooldown: 0,
+            // Tutorial
+            tutorialStep: 0,
+            tutorialDone: false,
+            tutorialAutoTimer: 0,
+            hasMoved: false,
+            hasKilled: false,
+            // Round transition
+            transitionTimer: 0,
+            transitionActive: false,
+            // Ghost Demo
+            ghostDemoTimer: 0,
+            ghostDemoDuration: 7,
+            ghostDemoGhost: null
+        };
+
+        // Input
+        const keys = {};
+        const joystickInput = { x: 0, y: 0, active: false };
+
+        // Player
+        const player = {
+            x: 0, y: 0,
+            radius: 14,
+            speed: 220,
+            color: '#ff0040',
+            dead: false
+        };
+
+        // Ghost
+        const ghost = {
+            x: 0, y: 0,
+            radius: 14,
+            trail: [],
+            bullets: [],
+            trailIndex: 0,
+            bulletIndex: 0,
+            active: false,
+            color: '#00aaff'
+        };
+
+        // Recording
+        let recording = { positions: [], bullets: [] };
+
+        // Entities
+        let bullets = [];
+        let ghostBullets = [];
+        let monsters = [];
+        let particles = [];
+        let gridOffset = 0;
+
+        // Constants
+        const BULLET_SPEED = 450;
+        const MONSTER_SPEED = 90;
+        const MONSTER_RADIUS = 12;
+        const BULLET_RADIUS = 4;
+        const GHOST_BULLET_RADIUS = 5;
+        const SHOOT_INTERVAL = 0.18;
+
+        // Sprites
+        const PLAYER_SPRITE = [
+            [0,0,1,1,1,0,0],
+            [0,1,1,1,1,1,0],
+            [1,1,0,1,0,1,1],
+            [1,1,1,1,1,1,1],
+            [0,1,1,1,1,1,0],
+            [0,1,0,1,0,1,0],
+            [0,1,0,0,0,1,0]
+        ];
+        const MONSTER_SPRITE = [
+            [0,1,0,1,0],
+            [1,1,1,1,1],
+            [1,0,1,0,1],
+            [0,1,1,1,0],
+            [1,0,0,0,1]
+        ];
+
+        function drawPixelSprite(ctx, sprite, x, y, size, color, glow) {
+            const rows = sprite.length;
+            const cols = sprite[0].length;
+            const px = size / Math.max(rows, cols);
+            const offsetX = -(cols * px) / 2;
+            const offsetY = -(rows * px) / 2;
+            ctx.fillStyle = color;
+            if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 10; }
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (sprite[r][c]) {
+                        ctx.fillRect(x + offsetX + c * px, y + offsetY + r * px, px, px);
+                    }
+                }
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        // ======== TUTORIAL ========
+        function showTutorialStep(index) {
+            if (index >= TUTORIAL_STEPS.length) {
+                tutorialOverlay.classList.remove('active');
+                // Tutorial done, start ghost demo
+                GAME.tutorialDone = true;
+                startGhostDemo();
+                return;
+            }
+            const step = TUTORIAL_STEPS[index];
+            tutorialTitle.textContent = step.title;
+            tutorialText.innerHTML = step.text;
+            tutorialHint.textContent = step.hint;
+            tutorialOverlay.classList.add('active');
+        }
+
+        function advanceTutorial() {
+            GAME.tutorialStep++;
+            if (GAME.tutorialStep >= TUTORIAL_STEPS.length) {
+                tutorialOverlay.classList.remove('active');
+                GAME.tutorialDone = true;
+                startGhostDemo();
+            } else {
+                showTutorialStep(GAME.tutorialStep);
+            }
+        }
+
+        function startGhostDemo() {
+            if (recording.positions.length === 0) {
+                // No recording, just start round 1
+                startRound(1, GAME.roundTime);
+                return;
+            }
+            GAME.state = 'ghostDemo';
+            GAME.ghostDemoTimer = 0;
+            // Create a demo ghost that replays the recording
+            GAME.ghostDemoGhost = {
+                trail: [...recording.positions],
+                bullets: [...recording.bullets],
+                trailIndex: 0,
+                bulletIndex: 0,
+                totalTime: recording.positions.length > 0 ? recording.positions[recording.positions.length - 1].time : 0,
+                x: recording.positions[0]?.x || W/2,
+                y: recording.positions[0]?.y || H/2
+            };
+            // Clear monsters and bullets for clean demo
+            monsters = [];
+            bullets = [];
+            ghostBullets = [];
+            particles = [];
+            player.x = W / 2;
+            player.y = H / 2;
+            // Show demo overlay
+            tutorialTitle.textContent = 'GHOST Demo';
+            tutorialText.innerHTML = 'This is the <span class="blue">GHOST</span>!<br>It replays your previous round\'s <span>movement</span> and <span>shots</span>.<br>Its bullets <span class="blue">CAN KILL YOU</span>!';
+            tutorialHint.textContent = 'Heading into Round 1...';
+            tutorialOverlay.classList.add('active');
+            updateUI();
+        }
+
+        function startTutorial() {
+            GAME.state = 'tutorial';
+            GAME.round = 0;
+            GAME.timeLeft = 15; // Tutorial: 15 seconds
+            GAME.elapsed = 0;
+            GAME.spawnTimer = 0;
+            GAME.spawnInterval = 2.5; // Slower spawn in tutorial
+            GAME.shootCooldown = 0;
+            GAME.hasMoved = false;
+            GAME.hasKilled = false;
+            GAME.tutorialStep = 0;
+            GAME.tutorialDone = false;
+            GAME.tutorialAutoTimer = 0;
+            player.x = W / 2;
+            player.y = H / 2;
+            player.dead = false;
+            bullets = [];
+            ghostBullets = [];
+            monsters = [];
+            particles = [];
+            ghost.active = false;
+            recording = { positions: [], bullets: [] };
+            showTutorialStep(0);
+            updateUI();
+        }
+
+        // ======== ROUND MANAGEMENT ========
+        function startRound(roundNum, time) {
+            GAME.round = roundNum;
+            GAME.timeLeft = time;
+            GAME.elapsed = 0;
+            GAME.spawnTimer = 0;
+            GAME.spawnInterval = Math.max(0.4, 1.2 - (roundNum - 1) * 0.15);
+            GAME.shootCooldown = 0;
+            GAME.state = 'playing';
+            player.x = W / 2;
+            player.y = H / 2;
+            player.dead = false;
+            bullets = [];
+            ghostBullets = [];
+            monsters = [];
+
+            // Set up ghost from previous recording (only from round >= 2)
+            if (roundNum >= 2 && recording.positions.length > 0) {
+                ghost.active = true;
+                ghost.trail = [...recording.positions];
+                ghost.bullets = [...recording.bullets];
+                ghost.trailIndex = 0;
+                ghost.bulletIndex = 0;
+                ghost.x = ghost.trail[0]?.x || W/2;
+                ghost.y = ghost.trail[0]?.y || H/2;
+            } else {
+                ghost.active = false;
+                ghost.trail = [];
+                ghost.bullets = [];
+            }
+
+            recording = { positions: [], bullets: [] };
+
+            // Show round transition
+            showRoundTransition(roundNum);
+
+            updateUI();
+        }
+
+        function showRoundTransition(roundNum) {
+            GAME.transitionActive = true;
+            GAME.transitionTimer = 1.5;
+            if (roundNum === 1) {
+                rtTitle.textContent = 'ROUND 1';
+                rtSubtitle.textContent = 'Eliminate all bugs!';
+            } else {
+                rtTitle.textContent = 'ROUND ' + roundNum;
+                rtSubtitle.textContent = 'Watch out for your past ghost!';
+            }
+            roundTransition.classList.add('active');
+        }
+
+        function resetGame() {
+            GAME.score = 0;
+            GAME.shake = 0;
+            GAME.transitionActive = false;
+            roundTransition.classList.remove('active');
+            gameOverScreen.style.display = 'none';
+            startTutorial();
+        }
+
+        function updateUI() {
+            roundValue.textContent = GAME.round;
+            timeValue.textContent = Math.ceil(Math.max(0, GAME.timeLeft));
+            scoreValue.textContent = GAME.score;
+        }
+
+        // ======== ENTITY FACTORIES ========
+        function spawnMonster() {
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+            const margin = 40;
+            switch(side) {
+                case 0: x = Math.random() * W; y = -margin; break;
+                case 1: x = W + margin; y = Math.random() * H; break;
+                case 2: x = Math.random() * W; y = H + margin; break;
+                case 3: x = -margin; y = Math.random() * H; break;
+            }
+            const hpBonus = GAME.round >= 2 ? Math.floor((GAME.round - 1) / 2) : 0;
+            monsters.push({
+                x, y, vx: 0, vy: 0,
+                radius: MONSTER_RADIUS,
+                hp: 1 + hpBonus,
+                maxHp: 1 + hpBonus,
+                flash: 0
+            });
+        }
+
+        function createParticles(x, y, color, count, speed) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = Math.random() * speed + 20;
+                particles.push({
+                    x, y,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd,
+                    life: 0.5 + Math.random() * 0.5,
+                    maxLife: 0.5 + Math.random() * 0.5,
+                    color,
+                    size: 2 + Math.random() * 3
+                });
+            }
+        }
+
+        function createExplosion(x, y, color) {
+            createParticles(x, y, color, 20, 120);
+            GAME.shake = 4;
+        }
+
+        function findNearestMonster(px, py) {
+            let nearest = null;
+            let minDist = Infinity;
+            for (const m of monsters) {
+                const dx = m.x - px;
+                const dy = m.y - py;
+                const d = Math.sqrt(dx*dx + dy*dy);
+                if (d < minDist) { minDist = d; nearest = m; }
+            }
+            return nearest;
+        }
+
+        function shootBullet(fromX, fromY, targetX, targetY, isGhost) {
+            const dx = targetX - fromX;
+            const dy = targetY - fromY;
+            const d = Math.sqrt(dx*dx + dy*dy);
+            if (d === 0) return;
+            const vx = (dx / d) * BULLET_SPEED;
+            const vy = (dy / d) * BULLET_SPEED;
+            const bullet = {
+                x: fromX, y: fromY, vx, vy,
+                radius: isGhost ? GHOST_BULLET_RADIUS : BULLET_RADIUS,
+                color: isGhost ? '#00aaff' : '#ffcc00',
+                isGhost,
+                life: 3.0
+            };
+            if (isGhost) {
+                ghostBullets.push(bullet);
+            } else {
+                bullets.push(bullet);
+            }
+        }
+
+        function dist(a, b) {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        // ======== UPDATE ========
+        function update(dt) {
+            if (GAME.state !== 'tutorial' && GAME.state !== 'playing' && GAME.state !== 'ghostDemo') return;
+
+            // Round transition overlay
+            if (GAME.transitionActive) {
+                GAME.transitionTimer -= dt;
+                if (GAME.transitionTimer <= 0) {
+                    GAME.transitionActive = false;
+                    roundTransition.classList.remove('active');
+                }
+            }
+
+            // Timer
+            GAME.timeLeft -= dt;
+            GAME.elapsed += dt;
+
+            // Tutorial time up
+            if (GAME.state === 'tutorial' && GAME.timeLeft <= 0) {
+                // Force advance tutorial
+                GAME.tutorialStep = TUTORIAL_STEPS.length;
+                tutorialOverlay.classList.remove('active');
+                GAME.tutorialDone = true;
+                startRound(1, GAME.roundTime);
+                return;
+            }
+
+            // Playing time up -> next round
+            if (GAME.state === 'playing' && GAME.timeLeft <= 0) {
+                startRound(GAME.round + 1, GAME.roundTime);
+                return;
+            }
+
+            // Spawn monsters
+            GAME.spawnTimer += dt;
+            if (GAME.spawnTimer >= GAME.spawnInterval) {
+                GAME.spawnTimer = 0;
+                if (GAME.state === 'tutorial') {
+                    spawnMonster(); // 1 at a time in tutorial
+                } else {
+                    const count = 1 + Math.floor((GAME.round - 1) / 2);
+                    for (let i = 0; i < count; i++) spawnMonster();
+                }
+            }
+
+            // Player movement
+            let mx = 0, my = 0;
+            if (keys['w'] || keys['arrowup']) my -= 1;
+            if (keys['s'] || keys['arrowdown']) my += 1;
+            if (keys['a'] || keys['arrowleft']) mx -= 1;
+            if (keys['d'] || keys['arrowright']) mx += 1;
+            if (joystickInput.active) { mx = joystickInput.x; my = joystickInput.y; }
+            const moveLen = Math.sqrt(mx*mx + my*my);
+            if (moveLen > 0) {
+                if (moveLen > 1) { mx /= moveLen; my /= moveLen; }
+                player.x += mx * player.speed * dt;
+                player.y += my * player.speed * dt;
+                // Tutorial: detect movement
+                if (GAME.state === 'tutorial' && !GAME.hasMoved) {
+                    GAME.hasMoved = true;
+                }
+            }
+            player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+
+            // Record position (for both playing and tutorial)
+            if (GAME.state === 'playing' || GAME.state === 'tutorial') {
+                recording.positions.push({ x: player.x, y: player.y, time: GAME.elapsed });
+            }
+
+            // Auto-aim and shoot (FIXED: use cooldown timer instead of timeLeft comparison)
+            GAME.shootCooldown -= dt;
+            const nearest = findNearestMonster(player.x, player.y);
+            if (nearest && GAME.shootCooldown <= 0) {
+                GAME.shootCooldown = SHOOT_INTERVAL;
+                shootBullet(player.x, player.y, nearest.x, nearest.y, false);
+                // Record bullet (for both playing and tutorial)
+                if (GAME.state === 'playing' || GAME.state === 'tutorial') {
+                    recording.bullets.push({
+                        time: GAME.elapsed,
+                        targetX: nearest.x,
+                        targetY: nearest.y
+                    });
+                }
+            }
+
+            // Tutorial step advancement
+            if (GAME.state === 'tutorial') {
+                const step = TUTORIAL_STEPS[GAME.tutorialStep];
+                if (step) {
+                    if (step.condition === 'moved' && GAME.hasMoved) {
+                        GAME.tutorialAutoTimer += dt;
+                        if (GAME.tutorialAutoTimer > 0.8) {
+                            GAME.tutorialAutoTimer = 0;
+                            advanceTutorial();
+                        }
+                    } else if (step.condition === 'kill' && GAME.hasKilled) {
+                        GAME.tutorialAutoTimer += dt;
+                        if (GAME.tutorialAutoTimer > 1.0) {
+                            GAME.tutorialAutoTimer = 0;
+                            advanceTutorial();
+                        }
+                    } else if (step.condition === 'auto') {
+                        GAME.tutorialAutoTimer += dt;
+                        if (GAME.tutorialAutoTimer > 2.5) {
+                            GAME.tutorialAutoTimer = 0;
+                            advanceTutorial();
+                        }
+                    }
+                }
+            }
+
+            // Update ghost
+            if (ghost.active) {
+                while (ghost.trailIndex < ghost.trail.length - 1 && ghost.trail[ghost.trailIndex + 1].time <= GAME.elapsed) {
+                    ghost.trailIndex++;
+                }
+                if (ghost.trailIndex < ghost.trail.length) {
+                    ghost.x = ghost.trail[ghost.trailIndex].x;
+                    ghost.y = ghost.trail[ghost.trailIndex].y;
+                }
+                while (ghost.bulletIndex < ghost.bullets.length && ghost.bullets[ghost.bulletIndex].time <= GAME.elapsed) {
+                    const b = ghost.bullets[ghost.bulletIndex];
+                    shootBullet(ghost.x, ghost.y, b.targetX, b.targetY, true);
+                    ghost.bulletIndex++;
+                }
+            }
+
+            // Update player bullets
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.life -= dt;
+                if (b.life <= 0 || b.x < -50 || b.x > W + 50 || b.y < -50 || b.y > H + 50) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                for (let j = monsters.length - 1; j >= 0; j--) {
+                    const m = monsters[j];
+                    if (dist(b, m) < b.radius + m.radius) {
+                        m.hp--;
+                        m.flash = 0.1;
+                        bullets.splice(i, 1);
+                        if (m.hp <= 0) {
+                            createExplosion(m.x, m.y, '#00ff88');
+                            monsters.splice(j, 1);
+                            GAME.score += 10;
+                            // Tutorial: detect kill
+                            if (GAME.state === 'tutorial' && !GAME.hasKilled) {
+                                GAME.hasKilled = true;
+                            }
+                            updateUI();
+                        } else {
+                            createParticles(m.x, m.y, '#00ff88', 5, 60);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Update ghost bullets
+            for (let i = ghostBullets.length - 1; i >= 0; i--) {
+                const b = ghostBullets[i];
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.life -= dt;
+                if (b.life <= 0 || b.x < -50 || b.x > W + 50 || b.y < -50 || b.y > H + 50) {
+                    ghostBullets.splice(i, 1);
+                    continue;
+                }
+                for (let j = monsters.length - 1; j >= 0; j--) {
+                    const m = monsters[j];
+                    if (dist(b, m) < b.radius + m.radius) {
+                        m.hp--;
+                        m.flash = 0.1;
+                        ghostBullets.splice(i, 1);
+                        if (m.hp <= 0) {
+                            createExplosion(m.x, m.y, '#00aaff');
+                            monsters.splice(j, 1);
+                            GAME.score += 10;
+                            updateUI();
+                        }
+                        break;
+                    }
+                }
+                // Ghost bullets kill player! (only during actual gameplay)
+                if (GAME.state === 'playing' && dist(b, player) < b.radius + player.radius) {
+                    player.dead = true;
+                    GAME.state = 'gameover';
+                    createExplosion(player.x, player.y, '#ff0040');
+                    showGameOver();
+                    return;
+                }
+            }
+
+            // Update monsters
+            for (const m of monsters) {
+                const dx = player.x - m.x;
+                const dy = player.y - m.y;
+                const d = Math.sqrt(dx*dx + dy*dy);
+                if (d > 0) {
+                    m.vx = (dx / d) * MONSTER_SPEED;
+                    m.vy = (dy / d) * MONSTER_SPEED;
+                }
+                m.x += m.vx * dt;
+                m.y += m.vy * dt;
+                if (m.flash > 0) m.flash -= dt;
+                if (dist(m, player) < m.radius + player.radius) {
+                    player.dead = true;
+                    GAME.state = 'gameover';
+                    createExplosion(player.x, player.y, '#ff0040');
+                    showGameOver();
+                    return;
+                }
+            }
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.life -= dt;
+                p.vx *= 0.95;
+                p.vy *= 0.95;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // ======== GHOST DEMO ========
+            if (GAME.state === 'ghostDemo') {
+                GAME.ghostDemoTimer += dt;
+                const demo = GAME.ghostDemoGhost;
+                if (demo) {
+                    const progress = GAME.ghostDemoTimer / GAME.ghostDemoDuration;
+                    // Advance ghost along trail
+                    const targetIndex = Math.floor(progress * demo.trail.length);
+                    demo.trailIndex = Math.min(targetIndex, demo.trail.length - 1);
+                    if (demo.trailIndex < demo.trail.length) {
+                        demo.x = demo.trail[demo.trailIndex].x;
+                        demo.y = demo.trail[demo.trailIndex].y;
+                    }
+                    // Fire ghost bullets during demo
+                    while (demo.bulletIndex < demo.bullets.length) {
+                        const b = demo.bullets[demo.bulletIndex];
+                        const bulletPct = demo.totalTime > 0 ? b.time / demo.totalTime : 0;
+                        if (bulletPct > progress) break; // Not yet time for this bullet
+                        shootBullet(demo.x, demo.y, b.targetX, b.targetY, true);
+                        demo.bulletIndex++;
+                    }
+                }
+                // End ghost demo after duration
+                if (GAME.ghostDemoTimer >= GAME.ghostDemoDuration) {
+                    GAME.state = 'idle';
+                    tutorialOverlay.classList.remove('active');
+                    startRound(1, GAME.roundTime);
+                }
+                updateUI();
+                return; // Skip rest of update during demo
+            }
+
+            // Screen shake decay
+            if (GAME.shake > 0) {
+                GAME.shake *= 0.9;
+                if (GAME.shake < 0.5) GAME.shake = 0;
+            }
+
+            updateUI();
+        }
+
+        function showGameOver() {
+            if (player.dead && ghost.active) {
+                deathTitle.textContent = 'KILLED BY YOURSELF';
+                deathSubtitle.textContent = 'Killed by bullets from your past self';
+            } else {
+                deathTitle.textContent = 'GAME OVER';
+                deathSubtitle.textContent = 'Devoured by the monsters';
+            }
+            finalScore.textContent = 'Score: ' + GAME.score;
+            finalRound.textContent = 'Round: ' + GAME.round;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        // ======== DRAW ========
+        function draw() {
+            ctx.save();
+            if (GAME.shake > 0) {
+                const sx = (Math.random() - 0.5) * GAME.shake * 2;
+                const sy = (Math.random() - 0.5) * GAME.shake * 2;
+                ctx.translate(sx, sy);
+            }
+
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, W, H);
+
+            // Cyberpunk grid
+            ctx.strokeStyle = 'rgba(138, 43, 226, 0.25)';
+            ctx.lineWidth = 1;
+            const gridSize = 50;
+            gridOffset = (gridOffset + 0.5) % gridSize;
+            for (let x = 0; x < W + gridSize; x += gridSize) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+            }
+            for (let y = gridOffset - gridSize; y < H + gridSize; y += gridSize) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+            }
+
+            // Vignette
+            const grad = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.8);
+            grad.addColorStop(0, 'rgba(0,0,0,0)');
+            grad.addColorStop(1, 'rgba(0,0,0,0.6)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            // Ghost trail
+            if (ghost.active && ghost.trail.length > 0) {
+                ctx.strokeStyle = 'rgba(0, 170, 255, 0.15)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                for (let i = 0; i < ghost.trail.length && i <= ghost.trailIndex + 10; i++) {
+                    const p = ghost.trail[i];
+                    if (i === 0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                }
+                ctx.stroke();
+            }
+
+            // Ghost
+            if (ghost.active) {
+                ctx.save();
+                ctx.globalAlpha = 0.6;
+                ctx.shadowColor = '#00aaff';
+                ctx.shadowBlur = 20;
+                drawPixelSprite(ctx, PLAYER_SPRITE, ghost.x, ghost.y, 32, '#00aaff', true);
+                ctx.globalAlpha = 0.2;
+                ctx.shadowBlur = 10;
+                drawPixelSprite(ctx, PLAYER_SPRITE, ghost.x - 8, ghost.y - 4, 32, '#00aaff', true);
+                drawPixelSprite(ctx, PLAYER_SPRITE, ghost.x + 4, ghost.y + 8, 32, '#00aaff', true);
+                ctx.restore();
+            }
+
+            // Ghost Demo rendering
+            if (GAME.state === 'ghostDemo' && GAME.ghostDemoGhost) {
+                const demo = GAME.ghostDemoGhost;
+                // Draw demo ghost trail
+                if (demo.trail.length > 0) {
+                    ctx.strokeStyle = 'rgba(0, 170, 255, 0.25)';
+                    ctx.lineWidth = 4;
+                    ctx.setLineDash([8, 8]);
+                    ctx.beginPath();
+                    for (let i = 0; i <= demo.trailIndex && i < demo.trail.length; i++) {
+                        const p = demo.trail[i];
+                        if (i === 0) ctx.moveTo(p.x, p.y);
+                        else ctx.lineTo(p.x, p.y);
+                    }
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+                // Draw demo ghost
+                ctx.save();
+                ctx.globalAlpha = 0.7;
+                ctx.shadowColor = '#00aaff';
+                ctx.shadowBlur = 25;
+                drawPixelSprite(ctx, PLAYER_SPRITE, demo.x, demo.y, 36, '#00aaff', true);
+                ctx.globalAlpha = 0.25;
+                ctx.shadowBlur = 12;
+                drawPixelSprite(ctx, PLAYER_SPRITE, demo.x - 10, demo.y - 5, 36, '#00aaff', true);
+                drawPixelSprite(ctx, PLAYER_SPRITE, demo.x + 6, demo.y + 10, 36, '#00aaff', true);
+                ctx.restore();
+                // "GHOST" label above demo ghost
+                ctx.save();
+                ctx.font = 'bold 14px "Courier New", monospace';
+                ctx.fillStyle = '#00aaff';
+                ctx.shadowColor = '#00aaff';
+                ctx.shadowBlur = 10;
+                ctx.textAlign = 'center';
+                ctx.fillText('GHOST', demo.x, demo.y - 28);
+                ctx.restore();
+            }
+
+            // Monsters
+            for (const m of monsters) {
+                ctx.save();
+                if (m.flash > 0) ctx.globalAlpha = 0.6 + Math.sin(m.flash * 30) * 0.4;
+                drawPixelSprite(ctx, MONSTER_SPRITE, m.x, m.y, 28, m.hp > 1 ? '#00cc66' : '#00ff88', true);
+                if (m.maxHp > 1) {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(m.x - 12, m.y - 20, 24, 4);
+                    ctx.fillStyle = '#00ff88';
+                    ctx.fillRect(m.x - 12, m.y - 20, 24 * (m.hp / m.maxHp), 4);
+                }
+                ctx.restore();
+            }
+
+            // Player bullets
+            for (const b of bullets) {
+                ctx.save();
+                ctx.shadowColor = b.color; ctx.shadowBlur = 8;
+                ctx.fillStyle = b.color;
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            }
+
+            // Ghost bullets
+            for (const b of ghostBullets) {
+                ctx.save();
+                ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 12;
+                ctx.fillStyle = '#00aaff';
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'rgba(0, 170, 255, 0.5)'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.radius + 3, 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+            }
+
+            // Player
+            if (!player.dead) {
+                ctx.save();
+                ctx.shadowColor = player.color; ctx.shadowBlur = 15;
+                drawPixelSprite(ctx, PLAYER_SPRITE, player.x, player.y, 32, player.color, true);
+                ctx.restore();
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.save();
+                ctx.globalAlpha = p.life / p.maxLife;
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color; ctx.shadowBlur = 5;
+                ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        // ======== GAME LOOP ========
+        function loop(timestamp) {
+            const dt = Math.min((timestamp - GAME.lastTime) / 1000, 0.05);
+            GAME.lastTime = timestamp;
+            update(dt);
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // ======== INPUT ========
+        window.addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            e.preventDefault();
+        });
+        window.addEventListener('keyup', e => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Joystick
+        let joystickCenter = { x: 0, y: 0 };
+        joystick.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = joystick.getBoundingClientRect();
+            joystickCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+            updateJoystick(touch.clientX, touch.clientY);
+        }, {passive: false});
+        joystick.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            updateJoystick(touch.clientX, touch.clientY);
+        }, {passive: false});
+        joystick.addEventListener('touchend', e => {
+            e.preventDefault();
+            joystickInput.active = false;
+            joystickInput.x = 0; joystickInput.y = 0;
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+        }, {passive: false});
+
+        function updateJoystick(clientX, clientY) {
+            const maxDist = 45;
+            let dx = clientX - joystickCenter.x;
+            let dy = clientY - joystickCenter.y;
+            const d = Math.sqrt(dx*dx + dy*dy);
+            if (d > maxDist) { dx = (dx / d) * maxDist; dy = (dy / d) * maxDist; }
+            joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            joystickInput.x = dx / maxDist;
+            joystickInput.y = dy / maxDist;
+            joystickInput.active = true;
+        }
+
+        // ======== BUTTONS ========
+        document.getElementById('startBtn').addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            resetGame();
+            GAME.lastTime = performance.now();
+            requestAnimationFrame(loop);
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            resetGame();
+        });
+
+        updateUI();
+
+        // Export for debugging
+        window.__GAME = GAME;
+        window.__player = player;
+        window.__monsters = monsters;
+        window.__bullets = bullets;
+        window.__ghost = ghost;
+        window.__ghostBullets = ghostBullets;
+        window.__particles = particles;
+        window.__W = () => W;
+        window.__H = () => H;
+    })();
+    </script>
+</body>
+</html>
